@@ -262,14 +262,14 @@ const SupabaseApi = {
   getChallengeById: async (id: string): Promise<Challenge | undefined> => {
     log(`[DB] getChallengeById: ${id}`);
 
-    // Fetch challenge structure and scores IN PARALLEL
+    // Fetch challenge structure and scores IN PARALLEL — only columns used by mapChallenge
     const [challengeResult, scoreResult] = await Promise.all([
       supabase
         .from('challenges')
         .select(`
-          *,
-          challenge_goals (*),
-          challenge_participants (*, profiles (*))
+          id, name, description, start_at, end_at, max_players, status, owner_id, join_code,
+          challenge_goals (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
+          challenge_participants (user_id, profiles (display_name, avatar_url))
         `)
         .eq('id', id)
         .single(),
