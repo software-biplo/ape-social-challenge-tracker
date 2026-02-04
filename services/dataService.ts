@@ -202,55 +202,55 @@ const SupabaseApi = {
 
     const challengeIds = participations.map(p => p.challenge_id);
 
-    // Step 2 + 3: Fetch challenges and scores IN PARALLEL (both only depend on challengeIds)
-    const [challengeResult, scoreResult] = await Promise.all([
-      supabase
+    // Lightweight query: only fields needed for dashboard cards (no goals, no full profiles)
+    const { data: challenges, error } = await supabase
         .from('challenges')
         .select(`
-            *,
-            challenge_goals (*),
-            challenge_participants (*, profiles (*))
+            id, name, description, start_at, end_at, status, owner_id, join_code, max_players,
+            challenge_participants (user_id)
         `)
         .in('id', challengeIds)
-        .order('created_at', { ascending: false }),
-      supabase
-        .from('goal_completions')
-        .select('challenge_id, user_id, points_at_time')
-        .in('challenge_id', challengeIds)
-    ]);
+        .order('created_at', { ascending: false });
 
-    if (challengeResult.error) {
-      logError(`[DB Error] getAllChallenges (challenges):`, challengeResult.error.message);
-      throw challengeResult.error;
+    if (error) {
+      logError(`[DB Error] getAllChallenges:`, error.message);
+      throw error;
     }
 
-    const challenges = challengeResult.data;
     if (!challenges || challenges.length === 0) return [];
 
-    if (scoreResult.error) {
-      logError(`[DB Error] getAllChallenges (scores):`, scoreResult.error.message);
-      // Non-fatal: proceed with zero scores rather than failing
-    }
-
-    const scoreData = scoreResult.data;
-
-    // Build a score map: { challengeId -> { userId -> totalScore } }
-    const scoreMaps: Record<string, Record<string, number>> = {};
-    if (scoreData) {
-      for (const row of scoreData) {
-        if (!scoreMaps[row.challenge_id]) scoreMaps[row.challenge_id] = {};
-        scoreMaps[row.challenge_id][row.user_id] =
-          (scoreMaps[row.challenge_id][row.user_id] || 0) + row.points_at_time;
+    // Map to Challenge type with minimal data (no goals, no scores — those load on detail)
+    const mapped = challenges.map((c: any) => {
+      let description = c.description;
+      let coverImage = undefined;
+      if (description && description.includes('|IMG:')) {
+          const parts = description.split('|IMG:');
+          description = parts[0];
+          coverImage = parts[1];
       }
-    }
 
-    const mapped = challenges.map((c: any) => mapChallenge(
-        c,
-        c.challenge_goals || [],
-        c.challenge_participants || [],
-        [], // no raw completions needed
-        scoreMaps[c.id] || {}
-    ));
+      const participants = (c.challenge_participants || []).map((p: any) => ({
+        userId: p.user_id,
+        name: '',
+        score: 0,
+        avatar: undefined
+      }));
+
+      return {
+        id: c.id,
+        creatorId: c.owner_id,
+        name: c.name,
+        description,
+        startDate: c.start_at,
+        endDate: c.end_at,
+        maxPlayers: c.max_players,
+        status: c.status,
+        joinCode: c.join_code,
+        coverImage: getCoverImage(c.id, coverImage),
+        goals: [], // loaded on detail view
+        participants
+      } as Challenge;
+    });
     return mapped;
   },
 
