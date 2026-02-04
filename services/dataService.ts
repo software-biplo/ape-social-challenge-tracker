@@ -124,7 +124,7 @@ const SupabaseApi = {
       log(`[DB] getUserProfile: ${userId}`);
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, display_name, avatar_url, preferred_language')
         .eq('id', userId)
         .maybeSingle();
 
@@ -255,46 +255,28 @@ const SupabaseApi = {
   },
 
   /**
-   * OPTIMIZED: Fetches a single challenge WITHOUT embedding goal_completions.
-   * Scores are computed from a separate lightweight aggregation query.
-   * Full completion logs are fetched separately via getLogs() when needed.
+   * OPTIMIZED: Single query for challenge structure only.
+   * Scores are computed from logs (fetched separately via getLogs).
    */
   getChallengeById: async (id: string): Promise<Challenge | undefined> => {
     log(`[DB] getChallengeById: ${id}`);
 
-    // Fetch challenge structure and scores IN PARALLEL — only columns used by mapChallenge
-    const [challengeResult, scoreResult] = await Promise.all([
-      supabase
-        .from('challenges')
-        .select(`
-          id, name, description, start_at, end_at, max_players, status, owner_id, join_code,
-          challenge_goals (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
-          challenge_participants (user_id, profiles (display_name, avatar_url))
-        `)
-        .eq('id', id)
-        .single(),
-      supabase
-        .from('goal_completions')
-        .select('user_id, points_at_time')
-        .eq('challenge_id', id)
-    ]);
+    const { data: challenge, error } = await supabase
+      .from('challenges')
+      .select(`
+        id, name, description, start_at, end_at, max_players, status, owner_id, join_code,
+        challenge_goals (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
+        challenge_participants (user_id, profiles (display_name, avatar_url))
+      `)
+      .eq('id', id)
+      .single();
 
-    if (challengeResult.error) {
-      logError(`[DB Error] getChallengeById:`, challengeResult.error.message);
+    if (error) {
+      logError(`[DB Error] getChallengeById:`, error.message);
       return undefined;
     }
 
-    const challenge = challengeResult.data;
     if (!challenge) return undefined;
-
-    const scoreData = scoreResult.data;
-
-    const scoreMap: Record<string, number> = {};
-    if (scoreData) {
-      for (const row of scoreData) {
-        scoreMap[row.user_id] = (scoreMap[row.user_id] || 0) + row.points_at_time;
-      }
-    }
 
     const c = challenge as any;
     return mapChallenge(
@@ -302,7 +284,7 @@ const SupabaseApi = {
         c.challenge_goals || [],
         c.challenge_participants || [],
         [],
-        scoreMap
+        {} // scores computed from logs by the caller
     );
   },
 
@@ -633,7 +615,7 @@ const SupabaseApi = {
      log(`[DB] getLogs: ${challengeId}`);
      let query = supabase
        .from('goal_completions')
-       .select('*')
+       .select('id, challenge_id, goal_id, user_id, completion_at, points_at_time')
        .eq('challenge_id', challengeId)
        .order('completion_at', { ascending: false });
 

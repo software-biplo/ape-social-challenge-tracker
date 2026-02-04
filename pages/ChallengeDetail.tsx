@@ -51,16 +51,15 @@ const ChallengeDetail: React.FC = () => {
 
   useEffect(() => {
     if (id) {
-      // Trigger initial fetch if missing, or refresh if present
+      // Load challenge structure first for instant render, then logs in background
       const init = async () => {
         try {
-          await Promise.all([
-            fetchChallengeDetail(id),
-            fetchLogs(id)
-          ]);
+          await fetchChallengeDetail(id);
         } finally {
           setLoadingInitial(false);
         }
+        // Logs load in background — scores update reactively when they arrive
+        fetchLogs(id);
       };
       init();
     }
