@@ -666,10 +666,7 @@ const SupabaseApi = {
       try {
           const { data, error } = await supabase
             .from('challenge_messages')
-            .select(`
-                *,
-                profiles (*)
-            `)
+            .select('id, challenge_id, user_id, message_text, created_at')
             .eq('challenge_id', challengeId)
             .order('created_at', { ascending: true });
 
@@ -677,7 +674,16 @@ const SupabaseApi = {
               if (error.code === 'PGRST116' || error.message.includes('not found') || error.message.includes('relation')) return [];
               return [];
           }
-          return (data || []).map(mapMessage);
+          // Return raw messages without profile join — caller resolves names from participant cache
+          return (data || []).map((m: any) => ({
+              id: m.id,
+              challengeId: m.challenge_id,
+              userId: m.user_id,
+              userName: '',  // resolved by caller from participant cache
+              userAvatar: undefined,
+              messageText: m.message_text,
+              createdAt: m.created_at || new Date().toISOString()
+          }));
       } catch (err) {
           log("getMessages failed - table challenge_messages may not exist");
           return [];
