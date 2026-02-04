@@ -35,7 +35,6 @@ export const authService = {
       const { error } = await supabase.from('profiles').insert({
           id: userId,
           display_name: name || email?.split('@')[0] || 'User',
-          avatar_url: `https://api.dicebear.com/9.x/initials/svg?seed=${name}`
       });
 
       if (error) {

@@ -67,7 +67,33 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
         // Update cache with fresh list data
         setChallengeCache(prev => {
           const next = { ...prev };
-          data.forEach(c => { next[c.id] = c; });
+          data.forEach(c => {
+            const existing = prev[c.id];
+            if (!existing) {
+              next[c.id] = c;
+              return;
+            }
+
+            const existingParticipants = new Map(existing.participants.map(p => [p.userId, p]));
+            const mergedParticipants = (c.participants || []).map(p => {
+              const prior = existingParticipants.get(p.userId);
+              if (!prior) return p;
+              return {
+                ...prior,
+                ...p,
+                score: prior.score ?? p.score,
+                name: p.name || prior.name,
+                avatar: p.avatar || prior.avatar
+              };
+            });
+
+            next[c.id] = {
+              ...existing,
+              ...c,
+              goals: existing.goals?.length ? existing.goals : c.goals,
+              participants: mergedParticipants
+            };
+          });
           return next;
         });
       } catch (e) {
@@ -93,7 +119,31 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
       try {
         const latest = await api.getChallengeById(id);
         if (latest) {
-          setChallengeCache(prev => ({ ...prev, [id]: latest }));
+          setChallengeCache(prev => {
+            const existing = prev[id];
+            if (!existing) return { ...prev, [id]: latest };
+
+            const existingScores = new Map(existing.participants.map(p => [p.userId, p]));
+            const mergedParticipants = latest.participants.map(p => {
+              const prior = existingScores.get(p.userId);
+              if (!prior) return p;
+              return {
+                ...prior,
+                ...p,
+                score: prior.score ?? p.score,
+                name: p.name || prior.name,
+                avatar: p.avatar || prior.avatar
+              };
+            });
+
+            return { 
+              ...prev, 
+              [id]: { 
+                ...latest, 
+                participants: mergedParticipants 
+              } 
+            };
+          });
           lastFetchDetailRef.current[id] = Date.now();
         }
       } catch (e) {

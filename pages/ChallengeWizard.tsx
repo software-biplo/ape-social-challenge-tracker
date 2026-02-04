@@ -10,7 +10,7 @@ import { ALL_ICONS } from '../services/iconService';
 import Card from '../components/Card';
 import DatePicker from '../components/DatePicker';
 import LoadingScreen from '../components/LoadingScreen';
-import { ChevronRight, ChevronLeft, Check, Plus, Trash2, Calendar, Target, Settings, Share2, Activity, Pencil, X, Image as ImageIcon, AlertTriangle, Search } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Check, Plus, Trash2, Calendar, Target, Settings, Share2, Activity, Pencil, X, Image as ImageIcon, AlertTriangle, Search, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 const THEME_IMAGES = [
@@ -294,6 +294,34 @@ const ChallengeWizard: React.FC = () => {
                           onChange={e => setNewGoal({...newGoal, title: e.target.value})}
                       />
                    </div>
+                   <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">{t('description')}</label>
+                        {newGoal.description && (
+                          <div className="relative group">
+                            <button 
+                              type="button"
+                              aria-label={t('description')}
+                              className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                            >
+                              <Info size={14} />
+                            </button>
+                            <div className="absolute left-1/2 top-full z-20 hidden w-56 -translate-x-1/2 pt-2 group-hover:block group-focus-within:block">
+                              <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-medium text-slate-700 shadow-lg">
+                                {newGoal.description}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <textarea 
+                          placeholder="..." 
+                          className="w-full p-3 rounded-xl border border-slate-200 bg-white text-slate-900 outline-none text-base"
+                          rows={3}
+                          value={newGoal.description || ''}
+                          onChange={e => setNewGoal({...newGoal, description: e.target.value})}
+                      />
+                   </div>
                    <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className={`block text-xs font-bold uppercase tracking-wider mb-1 ${(newGoal.points || 0) < 0 ? 'text-rose-500' : 'text-slate-500'}`}>
@@ -418,6 +446,22 @@ const ChallengeWizard: React.FC = () => {
                          </div>
                        </div>
                        <div className="flex items-center gap-2">
+                         {g.description && (
+                           <div className="relative group">
+                             <button 
+                               type="button"
+                               aria-label={t('description')}
+                               className="p-2 text-slate-400 hover:text-slate-700 transition-colors"
+                             >
+                               <Info size={16} />
+                             </button>
+                             <div className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-hover:block group-focus-within:block">
+                               <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-medium text-slate-700 shadow-lg">
+                                 {g.description}
+                               </div>
+                             </div>
+                           </div>
+                         )}
                          <button onClick={() => removeGoal(g.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                          <button onClick={() => startEditGoal(g)} className="p-2 text-slate-400 hover:text-brand-500 transition-colors"><Pencil size={16} /></button>
                        </div>

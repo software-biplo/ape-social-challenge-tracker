@@ -48,7 +48,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 id: sessionUser.id,
                 email: sessionUser.email,
                 name: fullName,
-                avatar: `https://api.dicebear.com/9.x/initials/svg?seed=${fullName}`
+                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${sessionUser.id}`
             };
         }
         

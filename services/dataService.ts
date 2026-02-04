@@ -124,7 +124,7 @@ const SupabaseApi = {
       log(`[DB] getUserProfile: ${userId}`);
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('id, display_name, preferred_language')
+        .select('id, display_name')
         .eq('id', userId)
         .maybeSingle();
 
@@ -139,7 +139,7 @@ const SupabaseApi = {
           email: email,
           name: profile.display_name,
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
-          preferredLanguage: profile.preferred_language
+          preferredLanguage: undefined
         };
       }
       return null;
@@ -151,8 +151,8 @@ const SupabaseApi = {
       display_name: name,
       updated_at: new Date(),
     };
-    if (avatarUrl) updates.avatar_url = avatarUrl;
-    if (language) updates.preferred_language = language;
+    // Intentionally skip avatar_url to avoid large image fetch/store.
+    // Intentionally skip preferred_language to avoid invalid column errors.
 
     const { error } = await supabase
       .from('profiles')
@@ -265,7 +265,7 @@ const SupabaseApi = {
       .from('challenges')
       .select(`
         id, name, description, start_at, end_at, max_players, status, owner_id, join_code,
-        challenge_goals (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
+        challenge_goals!cg_challenge_fkey (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
         challenge_participants (user_id, profiles (display_name))
       `)
       .eq('id', id)
@@ -401,6 +401,7 @@ const SupabaseApi = {
         id: g.id,
         challenge_id: challenge.id,
         title: g.title,
+        description: g.description,
         points: g.points,
         frequency: g.frequency,
         icon_key: g.icon,

@@ -10,7 +10,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import LoadingScreen from '../components/LoadingScreen';
-import { Check, Minus, Settings, Loader2, Trash2, ArrowLeft, CheckCircle, LogOut, ShieldCheck, Lock, AlertTriangle, X, ChevronDown, ChevronLeft, ChevronRight, Send, MessageCircle } from 'lucide-react';
+import { Check, Minus, Settings, Loader2, Trash2, ArrowLeft, CheckCircle, LogOut, ShieldCheck, Lock, AlertTriangle, X, ChevronDown, ChevronLeft, ChevronRight, Send, MessageCircle, Info } from 'lucide-react';
 import { ResponsiveContainer, CartesianGrid, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 // Fixed date-fns imports to use named imports from the main package to resolve 'not callable' errors
 import { format, eachDayOfInterval, isSameDay, isBefore, isAfter, subDays, addDays, startOfDay, parseISO } from 'date-fns';
@@ -30,6 +30,7 @@ const ChallengeDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'goals' | 'leaderboard' | 'progress' | 'chat'>('goals');
   const [loadingInitial, setLoadingInitial] = useState(!challenge);
   const [processingGoalId, setProcessingGoalId] = useState<string | null>(null);
+  const pendingCompletionsRef = useRef<Record<string, number>>({});
 
   // Date navigation: allows viewing/logging goals for past days
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -150,10 +151,18 @@ const ChallengeDetail: React.FC = () => {
         return;
     }
 
+    const periodKey = getPeriodKey(goal.frequency, selectedDate);
+    const currentCompletions = userPeriodCounts.countByGoalId[goal.id] || 0;
+    const maxAllowed = goal.maxCompletions || 1;
+    const pendingKey = `${goal.id}:${user.id}:${periodKey}`;
+    const pendingCount = pendingCompletionsRef.current[pendingKey] || 0;
+    if (currentCompletions + pendingCount >= maxAllowed) return;
+
     setProcessingGoalId(goal.id);
 
     // Optimistic UI: create a temporary log entry and update cache instantly
-    const optimisticId = `temp-${Date.now()}`;
+    pendingCompletionsRef.current[pendingKey] = pendingCount + 1;
+    const optimisticId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const optimisticLog: CompletionLog = {
       id: optimisticId,
       challengeId: id,
@@ -190,6 +199,8 @@ const ChallengeDetail: React.FC = () => {
         // Rollback optimistic update on failure
         removeOptimisticLog(id, optimisticId);
         toast.error(e.message || t('error_generic'));
+    } finally {
+        pendingCompletionsRef.current[pendingKey] = Math.max(0, (pendingCompletionsRef.current[pendingKey] || 1) - 1);
     }
   };
 
@@ -284,22 +295,51 @@ const ChallengeDetail: React.FC = () => {
     }).sort((a, b) => b.score - a.score);
   }, [challenge, logs, selectedLeaderboardGoalId]);
 
-  const dailyProgress = useMemo(() => {
-    if (!challenge || !user || isNotStarted) return { current: 0, total: 0 };
+  const goalMeta = useMemo(() => {
+    const frequencyByGoalId: Record<string, string> = {};
+    const maxByGoalId: Record<string, number> = {};
+    const periodKeyByGoalId: Record<string, string> = {};
+    if (challenge) {
+      for (const goal of challenge.goals) {
+        frequencyByGoalId[goal.id] = goal.frequency;
+        maxByGoalId[goal.id] = goal.maxCompletions || 1;
+        periodKeyByGoalId[goal.id] = getPeriodKey(goal.frequency, selectedDate);
+      }
+    }
+    return { frequencyByGoalId, maxByGoalId, periodKeyByGoalId };
+  }, [challenge, selectedDate]);
+
+  const userPeriodCounts = useMemo(() => {
+    const countByGoalId: Record<string, number> = {};
+    if (!challenge || !user || isNotStarted) {
+      return { countByGoalId, totalCurrent: 0, totalMax: 0 };
+    }
+
+    for (const log of logs) {
+      if (log.userId !== user.id) continue;
+      const frequency = goalMeta.frequencyByGoalId[log.goalId];
+      if (!frequency) continue;
+      const logPeriodKey = getPeriodKey(frequency as any, new Date(log.timestamp));
+      if (logPeriodKey !== goalMeta.periodKeyByGoalId[log.goalId]) continue;
+      countByGoalId[log.goalId] = (countByGoalId[log.goalId] || 0) + 1;
+    }
+
     let totalCurrent = 0;
     let totalMax = 0;
-    challenge.goals.forEach(goal => {
-        const currentPeriodKey = getPeriodKey(goal.frequency, selectedDate);
-        const completionsCount = logs.filter(l =>
-            l.goalId === goal.id && l.userId === user.id &&
-            getPeriodKey(goal.frequency, new Date(l.timestamp)) === currentPeriodKey
-        ).length;
-        const goalMax = goal.maxCompletions || 1;
-        totalCurrent += Math.min(completionsCount, goalMax);
-        totalMax += goalMax;
-    });
-    return { current: totalCurrent, total: totalMax };
-  }, [challenge, logs, user, isNotStarted, selectedDate]);
+    for (const goal of challenge.goals) {
+      const goalMax = goalMeta.maxByGoalId[goal.id] || 1;
+      const count = countByGoalId[goal.id] || 0;
+      totalCurrent += Math.min(count, goalMax);
+      totalMax += goalMax;
+    }
+
+    return { countByGoalId, totalCurrent, totalMax };
+  }, [challenge, logs, user, isNotStarted, goalMeta]);
+
+  const dailyProgress = useMemo(() => {
+    if (!challenge || !user || isNotStarted) return { current: 0, total: 0 };
+    return { current: userPeriodCounts.totalCurrent, total: userPeriodCounts.totalMax };
+  }, [challenge, user, isNotStarted, userPeriodCounts]);
 
   const progressData = useMemo(() => {
     if (!challenge) return { chart: [], userTotal: 0, groupAvg: 0 };
@@ -378,13 +418,27 @@ const ChallengeDetail: React.FC = () => {
               <span className="text-sm font-bold text-slate-600 tracking-tight">
                 {isToday ? t('daily_progress') : format(selectedDate, 'd MMM', { locale: dateLocale })}
               </span>
-              <span className="text-sm font-black text-brand-600">{dailyProgress.current}/{dailyProgress.total}</span>
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm font-black text-brand-600">
+                  {dailyProgress.current} {language === 'nl' ? 'van' : 'of'} {dailyProgress.total}
+                </span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">100% max</span>
+              </div>
            </div>
-           <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+           <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {language === 'nl' ? 'Dagscore' : 'Daily score'}
+              </span>
+              <span className="text-xs font-black text-slate-700">
+                {dailyProgress.total ? Math.min(100, Math.round((dailyProgress.current / dailyProgress.total) * 100)) : 0}%
+              </span>
+           </div>
+           <div className="h-3 bg-slate-100 rounded-full overflow-hidden relative">
               <div 
-                  className={`h-full bg-brand-500 rounded-full transition-all duration-700 ease-out ${isNotStarted ? 'opacity-30' : ''}`} 
-                  style={{ width: `${dailyProgress.total ? (dailyProgress.current / dailyProgress.total) * 100 : 0}%` }} 
+                  className={`h-full bg-gradient-to-r from-brand-500 via-orange-400 to-rose-400 rounded-full transition-all duration-700 ease-out ${isNotStarted ? 'opacity-30' : ''}`} 
+                  style={{ width: `${dailyProgress.total ? Math.min(100, (dailyProgress.current / dailyProgress.total) * 100) : 0}%` }} 
               />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(255,255,255,0.35),transparent_60%)] opacity-60" />
            </div>
         </div>
       </div>
@@ -444,11 +498,7 @@ const ChallengeDetail: React.FC = () => {
 
             {challenge.goals.map(goal => {
               const GoalIcon = getIcon(goal.icon);
-              const currentPeriodKey = getPeriodKey(goal.frequency, selectedDate);
-              const completionsInPeriod = logs.filter(l => {
-                 if (l.goalId !== goal.id || l.userId !== user?.id) return false;
-                 return getPeriodKey(goal.frequency, new Date(l.timestamp)) === currentPeriodKey;
-              }).length;
+              const completionsInPeriod = userPeriodCounts.countByGoalId[goal.id] || 0;
               const isCompleted = goal.maxCompletions ? completionsInPeriod >= goal.maxCompletions : false;
               const isProcessing = processingGoalId === goal.id;
               const isPenalty = goal.points < 0;
@@ -462,7 +512,25 @@ const ChallengeDetail: React.FC = () => {
                         </div>
                         <div className="flex flex-col min-w-0">
                             {/* Restored truncate for Goal Title to prevent card expansion */}
-                            <h3 className="font-bold text-slate-900 text-lg leading-tight truncate tracking-tight">{goal.title}</h3>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <h3 className="font-bold text-slate-900 text-lg leading-tight truncate tracking-tight">{goal.title}</h3>
+                              {goal.description && (
+                                <div className="relative group">
+                                  <button 
+                                    type="button"
+                                    aria-label={language === 'nl' ? 'Toelichting' : 'Description'}
+                                    className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                                  >
+                                    <Info size={14} />
+                                  </button>
+                                  <div className="absolute left-1/2 top-full z-20 hidden w-56 -translate-x-1/2 pt-2 group-hover:block group-focus-within:block">
+                                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-medium text-slate-700 shadow-lg">
+                                      {goal.description}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{t(goal.frequency as any)}</span>
                                 <span className={`text-xs font-bold ${isPenalty ? 'text-rose-500' : 'text-brand-600'}`}>

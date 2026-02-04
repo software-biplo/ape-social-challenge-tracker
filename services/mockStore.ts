@@ -6,5 +6,5 @@ export const GUEST_USER = {
   id: 'guest',
   name: 'Guest User',
   email: 'guest@strive.app',
-  avatar: 'https://api.dicebear.com/9.x/initials/svg?seed=Guest'
+  avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=guest'
 };
