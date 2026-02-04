@@ -265,7 +265,7 @@ const SupabaseApi = {
       .from('challenges')
       .select(`
         id, name, description, start_at, end_at, max_players, status, owner_id, join_code,
-        challenge_goals (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
+        challenge_goals!cg_challenge_fkey (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
         challenge_participants (user_id, profiles (display_name))
       `)
       .eq('id', id)

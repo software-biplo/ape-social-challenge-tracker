@@ -82,7 +82,8 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
                 ...prior,
                 ...p,
                 score: prior.score ?? p.score,
-                name: p.name || prior.name
+                name: p.name || prior.name,
+                avatar: p.avatar || prior.avatar
               };
             });
 
@@ -130,7 +131,8 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
                 ...prior,
                 ...p,
                 score: prior.score ?? p.score,
-                name: p.name || prior.name
+                name: p.name || prior.name,
+                avatar: p.avatar || prior.avatar
               };
             });
 
