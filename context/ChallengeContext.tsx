@@ -119,6 +119,26 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
         const latest = await api.getLogs(id);
         setLogsCache(prev => ({ ...prev, [id]: latest }));
         lastFetchLogsRef.current[id] = Date.now();
+
+        // Compute participant scores from logs (avoids separate scores query)
+        setChallengeCache(prev => {
+          const challenge = prev[id];
+          if (!challenge) return prev;
+          const scoreMap: Record<string, number> = {};
+          for (const log of latest) {
+            scoreMap[log.userId] = (scoreMap[log.userId] || 0) + log.pointsEarned;
+          }
+          return {
+            ...prev,
+            [id]: {
+              ...challenge,
+              participants: challenge.participants.map(p => ({
+                ...p,
+                score: scoreMap[p.userId] || 0
+              }))
+            }
+          };
+        });
       } catch (e) {
         console.error("Failed to fetch logs", e);
       } finally {

@@ -51,16 +51,15 @@ const ChallengeDetail: React.FC = () => {
 
   useEffect(() => {
     if (id) {
-      // Trigger initial fetch if missing, or refresh if present
+      // Load challenge structure first for instant render, then logs in background
       const init = async () => {
         try {
-          await Promise.all([
-            fetchChallengeDetail(id),
-            fetchLogs(id)
-          ]);
+          await fetchChallengeDetail(id);
         } finally {
           setLoadingInitial(false);
         }
+        // Logs load in background — scores update reactively when they arrive
+        fetchLogs(id);
       };
       init();
     }
@@ -72,13 +71,6 @@ const ChallengeDetail: React.FC = () => {
   useEffect(() => {
       if (!id || activeTab !== 'chat') return;
 
-      const loadChat = async () => {
-          const history = await api.getMessages(id);
-          setMessages(history);
-      };
-
-      loadChat();
-
       // Build a local profile lookup from challenge participants
       const profileMap: Record<string, { name: string; avatar?: string }> = {};
       if (challenge?.participants) {
@@ -86,6 +78,19 @@ const ChallengeDetail: React.FC = () => {
               profileMap[p.userId] = { name: p.name, avatar: p.avatar };
           });
       }
+
+      const loadChat = async () => {
+          const history = await api.getMessages(id);
+          // Resolve names from participant cache (no profiles join needed)
+          const resolved = history.map(m => ({
+              ...m,
+              userName: profileMap[m.userId]?.name || 'Anonymous',
+              userAvatar: profileMap[m.userId]?.avatar
+          }));
+          setMessages(resolved);
+      };
+
+      loadChat();
 
       const channel = supabase.channel(`chat:${id}`)
           .on('postgres_changes', {

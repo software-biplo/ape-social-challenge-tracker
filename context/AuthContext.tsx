@@ -30,6 +30,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // We need to capture the initial hash before Supabase or Router clears it
   const initialHashRef = useRef(window.location.hash);
+  // Track whether initSession already loaded user data to avoid duplicate call from onAuthStateChange
+  const sessionInitializedRef = useRef(false);
 
   // Helper to fetch profile or create it if missing (Lazy Creation)
   const loadUserdata = async (sessionUser: any) => {
@@ -88,6 +90,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
            setUser(null);
         } else if (data?.session?.user) {
            await loadUserdata(data.session.user);
+           sessionInitializedRef.current = true;
         }
       } catch (err) {
         console.error("Unexpected session error:", err);
@@ -101,7 +104,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const { data } = authService.onAuthStateChange((event, session) => {
       if (session?.user) {
-        if (!user || user.id !== session.user.id) {
+        // Skip duplicate loadUserdata if initSession already handled this user
+        if (sessionInitializedRef.current) {
+            sessionInitializedRef.current = false; // Reset for future auth changes
+        } else if (!user || user.id !== session.user.id) {
             loadUserdata(session.user);
         }
 

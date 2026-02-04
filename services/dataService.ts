@@ -63,7 +63,7 @@ const mapChallenge = (
     return {
       userId: userId,
       name: profile?.display_name || 'Anonymous',
-      avatar: profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
       score: userScore
     };
   });
@@ -124,7 +124,7 @@ const SupabaseApi = {
       log(`[DB] getUserProfile: ${userId}`);
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, display_name, preferred_language')
         .eq('id', userId)
         .maybeSingle();
 
@@ -138,7 +138,7 @@ const SupabaseApi = {
           id: userId,
           email: email,
           name: profile.display_name,
-          avatar: profile.avatar_url,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
           preferredLanguage: profile.preferred_language
         };
       }
@@ -202,94 +202,81 @@ const SupabaseApi = {
 
     const challengeIds = participations.map(p => p.challenge_id);
 
-    // Step 2: Fetch challenges with goals and participants (NO goal_completions)
+    // Lightweight query: only fields needed for dashboard cards (no goals, no full profiles)
     const { data: challenges, error } = await supabase
         .from('challenges')
         .select(`
-            *,
-            challenge_goals (*),
-            challenge_participants (*, profiles (*))
+            id, name, description, start_at, end_at, status, owner_id, join_code, max_players,
+            challenge_participants (user_id)
         `)
         .in('id', challengeIds)
         .order('created_at', { ascending: false });
 
     if (error) {
-      logError(`[DB Error] getAllChallenges (challenges):`, error.message);
+      logError(`[DB Error] getAllChallenges:`, error.message);
       throw error;
     }
 
     if (!challenges || challenges.length === 0) return [];
 
-    // Step 3: Fetch aggregated scores per user per challenge in ONE query
-    // Instead of fetching every individual completion row, we just get the sums
-    const { data: scoreData, error: scoreError } = await supabase
-        .from('goal_completions')
-        .select('challenge_id, user_id, points_at_time')
-        .in('challenge_id', challengeIds);
-
-    if (scoreError) {
-      logError(`[DB Error] getAllChallenges (scores):`, scoreError.message);
-      // Non-fatal: proceed with zero scores rather than failing
-    }
-
-    // Build a score map: { challengeId -> { userId -> totalScore } }
-    const scoreMaps: Record<string, Record<string, number>> = {};
-    if (scoreData) {
-      for (const row of scoreData) {
-        if (!scoreMaps[row.challenge_id]) scoreMaps[row.challenge_id] = {};
-        scoreMaps[row.challenge_id][row.user_id] =
-          (scoreMaps[row.challenge_id][row.user_id] || 0) + row.points_at_time;
+    // Map to Challenge type with minimal data (no goals, no scores — those load on detail)
+    const mapped = challenges.map((c: any) => {
+      let description = c.description;
+      let coverImage = undefined;
+      if (description && description.includes('|IMG:')) {
+          const parts = description.split('|IMG:');
+          description = parts[0];
+          coverImage = parts[1];
       }
-    }
 
-    const mapped = challenges.map((c: any) => mapChallenge(
-        c,
-        c.challenge_goals || [],
-        c.challenge_participants || [],
-        [], // no raw completions needed
-        scoreMaps[c.id] || {}
-    ));
+      const participants = (c.challenge_participants || []).map((p: any) => ({
+        userId: p.user_id,
+        name: '',
+        score: 0,
+        avatar: undefined
+      }));
+
+      return {
+        id: c.id,
+        creatorId: c.owner_id,
+        name: c.name,
+        description,
+        startDate: c.start_at,
+        endDate: c.end_at,
+        maxPlayers: c.max_players,
+        status: c.status,
+        joinCode: c.join_code,
+        coverImage: getCoverImage(c.id, coverImage),
+        goals: [], // loaded on detail view
+        participants
+      } as Challenge;
+    });
     return mapped;
   },
 
   /**
-   * OPTIMIZED: Fetches a single challenge WITHOUT embedding goal_completions.
-   * Scores are computed from a separate lightweight aggregation query.
-   * Full completion logs are fetched separately via getLogs() when needed.
+   * OPTIMIZED: Single query for challenge structure only.
+   * Scores are computed from logs (fetched separately via getLogs).
    */
   getChallengeById: async (id: string): Promise<Challenge | undefined> => {
     log(`[DB] getChallengeById: ${id}`);
 
-    // Fetch challenge structure (no completions)
-    const { data: challenge, error: cError } = await supabase
+    const { data: challenge, error } = await supabase
       .from('challenges')
       .select(`
-        *,
-        challenge_goals (*),
-        challenge_participants (*, profiles (*))
+        id, name, description, start_at, end_at, max_players, status, owner_id, join_code,
+        challenge_goals (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
+        challenge_participants (user_id, profiles (display_name))
       `)
       .eq('id', id)
       .single();
 
-    if (cError) {
-      logError(`[DB Error] getChallengeById:`, cError.message);
+    if (error) {
+      logError(`[DB Error] getChallengeById:`, error.message);
       return undefined;
     }
 
     if (!challenge) return undefined;
-
-    // Fetch aggregated scores for this challenge only
-    const { data: scoreData } = await supabase
-        .from('goal_completions')
-        .select('user_id, points_at_time')
-        .eq('challenge_id', id);
-
-    const scoreMap: Record<string, number> = {};
-    if (scoreData) {
-      for (const row of scoreData) {
-        scoreMap[row.user_id] = (scoreMap[row.user_id] || 0) + row.points_at_time;
-      }
-    }
 
     const c = challenge as any;
     return mapChallenge(
@@ -297,7 +284,7 @@ const SupabaseApi = {
         c.challenge_goals || [],
         c.challenge_participants || [],
         [],
-        scoreMap
+        {} // scores computed from logs by the caller
     );
   },
 
@@ -628,7 +615,7 @@ const SupabaseApi = {
      log(`[DB] getLogs: ${challengeId}`);
      let query = supabase
        .from('goal_completions')
-       .select('*')
+       .select('id, challenge_id, goal_id, user_id, completion_at, points_at_time')
        .eq('challenge_id', challengeId)
        .order('completion_at', { ascending: false });
 
@@ -661,10 +648,7 @@ const SupabaseApi = {
       try {
           const { data, error } = await supabase
             .from('challenge_messages')
-            .select(`
-                *,
-                profiles (*)
-            `)
+            .select('id, challenge_id, user_id, message_text, created_at')
             .eq('challenge_id', challengeId)
             .order('created_at', { ascending: true });
 
@@ -672,7 +656,16 @@ const SupabaseApi = {
               if (error.code === 'PGRST116' || error.message.includes('not found') || error.message.includes('relation')) return [];
               return [];
           }
-          return (data || []).map(mapMessage);
+          // Return raw messages without profile join — caller resolves names from participant cache
+          return (data || []).map((m: any) => ({
+              id: m.id,
+              challengeId: m.challenge_id,
+              userId: m.user_id,
+              userName: '',  // resolved by caller from participant cache
+              userAvatar: undefined,
+              messageText: m.message_text,
+              createdAt: m.created_at || new Date().toISOString()
+          }));
       } catch (err) {
           log("getMessages failed - table challenge_messages may not exist");
           return [];
