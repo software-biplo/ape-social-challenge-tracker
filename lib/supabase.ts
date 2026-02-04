@@ -1,39 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
-import { ENV } from '../env';
 
-// Helper to safely access environment variables in different environments
-const getEnv = (key: string) => {
-  try {
-    // Priority 1: The local env.ts file
-    // Cast to any to avoid TypeScript indexing errors during build
-    const localEnv = ENV as any;
-    if (localEnv && localEnv[key]) return localEnv[key];
+// Read Supabase config from Vite environment variables.
+// On Vercel: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the dashboard.
+// Locally: create a .env.local file with these values, or use env.ts (gitignored).
 
-    // Priority 2: Process environment (Node/Cloud Run)
-    // @ts-ignore
-    if (typeof process !== 'undefined' && process.env && process.env[key]) {
-      // @ts-ignore
-      return process.env[key];
-    }
-    
-    // Priority 3: Vite/Meta environment
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[key]) {
-      // @ts-ignore
-      return import.meta.env[key];
-    }
-  } catch (e) {
-    // Ignore errors
-  }
-  return undefined;
-};
-
-const SUPABASE_URL = getEnv('VITE_SUPABASE_URL') || getEnv('REACT_APP_SUPABASE_URL');
-const SUPABASE_KEY = getEnv('VITE_SUPABASE_ANON_KEY') || getEnv('REACT_APP_SUPABASE_ANON_KEY');
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
   throw new Error(
-    'Supabase Configuration Missing. Please ensure keys are set in env.ts or your environment variables.'
+    'Supabase Configuration Missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file or Vercel environment variables.'
   );
 }
 
