@@ -176,11 +176,13 @@ const ChallengeDetail: React.FC = () => {
 
     // Show toast immediately
     if (goal.points < 0) {
+        if (navigator.vibrate) navigator.vibrate(10);
         toast.warning(`Penalty logged`, {
             description: `${goal.title}: ${goal.points} points`,
             icon: <AlertTriangle className="text-rose-500" size={18} />
         });
     } else {
+        if (navigator.vibrate) navigator.vibrate(10);
         toast.success(t('success_goal'), {
             description: goal.title,
             icon: '🎉'
@@ -224,6 +226,7 @@ const ChallengeDetail: React.FC = () => {
 
     // Optimistic UI: remove from cache instantly
     removeOptimisticLog(id, logToRemove.id);
+    if (navigator.vibrate) navigator.vibrate(10);
     toast.info("Progress adjusted");
 
     try {
@@ -342,7 +345,7 @@ const ChallengeDetail: React.FC = () => {
   }, [challenge, user, isNotStarted, userPeriodCounts]);
 
   const progressData = useMemo(() => {
-    if (!challenge) return { chart: [], userTotal: 0, groupAvg: 0 };
+    if (!challenge || activeTab !== 'progress') return { chart: [], userTotal: 0, groupAvg: 0 };
     const days = eachDayOfInterval({ start: subDays(new Date(), 6), end: new Date() });
     let cumulativeUser = 0;
     let cumulativeGroupSum = 0;
@@ -365,7 +368,7 @@ const ChallengeDetail: React.FC = () => {
        };
     });
     return { chart, userTotal: cumulativeUser, groupAvg: Math.round(cumulativeGroupSum) };
-  }, [logs, challenge, user, dateLocale, selectedProgressGoalId]);
+  }, [logs, challenge, user, dateLocale, selectedProgressGoalId, activeTab]);
 
   if (loadingInitial) return <LoadingScreen />;
   if (!challenge) return <div className="p-8 text-center text-red-500">Challenge not found.</div>;
@@ -495,6 +498,28 @@ const ChallengeDetail: React.FC = () => {
                 <ChevronRight size={20} />
               </button>
             </div>
+
+            {challenge.goals.length > 0 && logs.length === 0 && (
+              <div className="space-y-3 animate-pulse">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100" />
+                        <div className="flex flex-col gap-2 flex-1">
+                          <div className="h-4 w-2/3 bg-slate-100 rounded" />
+                          <div className="h-3 w-1/2 bg-slate-100 rounded" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        <div className="w-10 h-10 rounded-xl bg-slate-100" />
+                        <div className="w-12 h-12 rounded-xl bg-slate-100" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {challenge.goals.map(goal => {
               const GoalIcon = getIcon(goal.icon);
