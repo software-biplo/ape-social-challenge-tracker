@@ -1,0 +1,22 @@
+
+{
+  "short_name": "APE",
+  "name": "APE - Social Challenge Tracker",
+  "icons": [
+    {
+      "src": "https://api.dicebear.com/9.x/initials/svg?seed=APE&backgroundColor=f97316",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "https://api.dicebear.com/9.x/initials/svg?seed=APE&backgroundColor=f97316",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#f97316",
+  "background_color": "#ffffff",
+  "orientation": "portrait"
+}

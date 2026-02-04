@@ -1,0 +1,651 @@
+
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Challenge, CompletionLog, Goal, ChatMessage } from '../types';
+import { api, getPeriodKey } from '../services/dataService';
+import { getIcon } from '../services/iconService';
+import { useAuth } from '../context/AuthContext';
+import { useChallenges } from '../context/ChallengeContext';
+import { useLanguage } from '../context/LanguageContext';
+import { supabase } from '../lib/supabase';
+import Card from '../components/Card';
+import LoadingScreen from '../components/LoadingScreen';
+import { Check, Minus, Settings, Loader2, Trash2, ArrowLeft, CheckCircle, LogOut, ShieldCheck, Lock, AlertTriangle, X, ChevronDown, ChevronLeft, ChevronRight, Send, MessageCircle } from 'lucide-react';
+import { ResponsiveContainer, CartesianGrid, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+// Fixed date-fns imports to use named imports from the main package to resolve 'not callable' errors
+import { format, eachDayOfInterval, isSameDay, isBefore, isAfter, subDays, addDays, startOfDay, parseISO } from 'date-fns';
+import { toast } from 'sonner';
+
+const ChallengeDetail: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const { challengeCache, logsCache, fetchChallengeDetail, fetchLogs, refreshChallenges, invalidateChallenge, addOptimisticLog, removeOptimisticLog } = useChallenges();
+  const { t, dateLocale, language } = useLanguage();
+  const navigate = useNavigate();
+  
+  // Deriving data directly from Context Cache for reactivity
+  const challenge = id ? challengeCache[id] : undefined;
+  const logs = id ? (logsCache[id] || []) : [];
+
+  const [activeTab, setActiveTab] = useState<'goals' | 'leaderboard' | 'progress' | 'chat'>('goals');
+  const [loadingInitial, setLoadingInitial] = useState(!challenge);
+  const [processingGoalId, setProcessingGoalId] = useState<string | null>(null);
+
+  // Date navigation: allows viewing/logging goals for past days
+  const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
+  const isToday = isSameDay(selectedDate, new Date());
+  const isFutureDate = isAfter(selectedDate, startOfDay(new Date()));
+
+  const [selectedLeaderboardGoalId, setSelectedLeaderboardGoalId] = useState<string>('total');
+  const [selectedProgressGoalId, setSelectedProgressGoalId] = useState<string>('total');
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Chat State
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (id) {
+      // Trigger initial fetch if missing, or refresh if present
+      const init = async () => {
+        try {
+          await Promise.all([
+            fetchChallengeDetail(id),
+            fetchLogs(id)
+          ]);
+        } finally {
+          setLoadingInitial(false);
+        }
+      };
+      init();
+    }
+  }, [id, fetchChallengeDetail, fetchLogs]);
+
+  // Real-time Chat Subscription
+  // OPTIMIZED: Use payload.new directly + local participant profile cache
+  // instead of re-fetching from DB on every incoming message
+  useEffect(() => {
+      if (!id || activeTab !== 'chat') return;
+
+      const loadChat = async () => {
+          const history = await api.getMessages(id);
+          setMessages(history);
+      };
+
+      loadChat();
+
+      // Build a local profile lookup from challenge participants
+      const profileMap: Record<string, { name: string; avatar?: string }> = {};
+      if (challenge?.participants) {
+          challenge.participants.forEach(p => {
+              profileMap[p.userId] = { name: p.name, avatar: p.avatar };
+          });
+      }
+
+      const channel = supabase.channel(`chat:${id}`)
+          .on('postgres_changes', {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'challenge_messages',
+              filter: `challenge_id=eq.${id}`
+          }, (payload) => {
+              const msg = payload.new as any;
+              const profile = profileMap[msg.user_id];
+
+              setMessages(prev => {
+                  if (prev.find(m => m.id === msg.id)) return prev;
+                  return [...prev, {
+                      id: msg.id,
+                      challengeId: msg.challenge_id,
+                      userId: msg.user_id,
+                      userName: profile?.name || 'Anonymous',
+                      userAvatar: profile?.avatar,
+                      messageText: msg.message_text,
+                      createdAt: msg.created_at || new Date().toISOString()
+                  }];
+              });
+          })
+          .subscribe();
+
+      return () => {
+          supabase.removeChannel(channel);
+      };
+  }, [id, activeTab, challenge?.participants]);
+
+  useEffect(() => {
+      if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+  }, [messages, activeTab]);
+
+  const isNotStarted = useMemo(() => {
+      if (!challenge) return false;
+      const start = startOfDay(parseISO(challenge.startDate));
+      return isBefore(selectedDate, start);
+  }, [challenge, selectedDate]);
+
+  // Can't navigate before challenge start date
+  const canGoBack = useMemo(() => {
+      if (!challenge) return false;
+      const start = startOfDay(parseISO(challenge.startDate));
+      return isAfter(subDays(selectedDate, 1), start) || isSameDay(subDays(selectedDate, 1), start);
+  }, [challenge, selectedDate]);
+
+  const handleLogGoal = async (goal: Goal) => {
+    if (!user || !id || processingGoalId) return;
+    if (isNotStarted) {
+        toast.info(t('error_generic'), {
+            description: `${t('starts_on')} ${format(parseISO(challenge!.startDate), 'PPP', { locale: dateLocale })}`
+        });
+        return;
+    }
+
+    setProcessingGoalId(goal.id);
+
+    // Optimistic UI: create a temporary log entry and update cache instantly
+    const optimisticId = `temp-${Date.now()}`;
+    const optimisticLog: CompletionLog = {
+      id: optimisticId,
+      challengeId: id,
+      goalId: goal.id,
+      userId: user.id,
+      timestamp: selectedDate.toISOString(),
+      pointsEarned: goal.points
+    };
+    addOptimisticLog(id, optimisticLog);
+    setProcessingGoalId(null); // Unblock UI immediately
+
+    // Show toast immediately
+    if (goal.points < 0) {
+        toast.warning(`Penalty logged`, {
+            description: `${goal.title}: ${goal.points} points`,
+            icon: <AlertTriangle className="text-rose-500" size={18} />
+        });
+    } else {
+        toast.success(t('success_goal'), {
+            description: goal.title,
+            icon: '🎉'
+        });
+    }
+
+    try {
+        // Fire actual DB write in background with selected date
+        await api.logGoalCompletion(id, goal.id, user.id, goal.points, goal.frequency, selectedDate);
+
+        // Invalidate TTL and refresh in background to get real IDs
+        invalidateChallenge(id);
+        fetchChallengeDetail(id);
+        fetchLogs(id);
+    } catch (e: any) {
+        // Rollback optimistic update on failure
+        removeOptimisticLog(id, optimisticId);
+        toast.error(e.message || t('error_generic'));
+    }
+  };
+
+  const handleReduceGoal = async (goalId: string) => {
+    if (!user || !id || processingGoalId) return;
+    const currentGoal = challenge?.goals.find(g => g.id === goalId);
+    if (!currentGoal) return;
+
+    const currentPeriodKey = getPeriodKey(currentGoal.frequency, selectedDate);
+    const userLogsInPeriod = logs
+        .filter(l =>
+            l.goalId === goalId &&
+            l.userId === user.id &&
+            getPeriodKey(currentGoal.frequency, new Date(l.timestamp)) === currentPeriodKey
+        )
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    if (userLogsInPeriod.length === 0) return;
+
+    const logToRemove = userLogsInPeriod[0];
+
+    // Optimistic UI: remove from cache instantly
+    removeOptimisticLog(id, logToRemove.id);
+    toast.info("Progress adjusted");
+
+    try {
+        // Fire actual DB delete in background
+        await api.deleteLog(logToRemove.id);
+
+        // Invalidate TTL and refresh in background
+        invalidateChallenge(id);
+        fetchChallengeDetail(id);
+        fetchLogs(id);
+    } catch (e: any) {
+        // Rollback: re-add the log on failure
+        addOptimisticLog(id, logToRemove);
+        toast.error(e.message || t('error_generic'));
+    }
+  };
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!id || !user || !newMessage.trim() || isSending) return;
+
+      setIsSending(true);
+      try {
+          await api.sendMessage(id, user.id, newMessage.trim());
+          setNewMessage('');
+      } catch (err) {
+          toast.error("Failed to send message");
+      } finally {
+          setIsSending(false);
+      }
+  };
+
+  const handleConfirmDelete = async () => {
+      if (!challenge || isDeleting || !id) return;
+      if (deleteConfirmText !== challenge.name) return;
+      setIsDeleting(true);
+      try {
+          await api.deleteChallenge(challenge.id);
+          toast.success("Challenge deleted");
+          navigate('/');
+      } catch (e: any) {
+          toast.error(t('error_generic'));
+          setIsDeleting(false);
+      }
+  };
+
+  const handleLeave = async () => {
+      if (!challenge || !user || !id) return;
+      if (!window.confirm("Leave?")) return;
+      try {
+          await api.leaveChallenge(challenge.id, user.id);
+          toast.info("Left");
+          navigate('/');
+      } catch (e: any) {
+          toast.error(t('error_generic'));
+      }
+  };
+
+  const currentLeaderboard = useMemo(() => {
+    if (!challenge) return [];
+    if (selectedLeaderboardGoalId === 'total') {
+      return [...(challenge.participants || [])].sort((a, b) => b.score - a.score);
+    }
+    return challenge.participants.map(p => {
+      const goalScore = logs
+        .filter(l => l.goalId === selectedLeaderboardGoalId && l.userId === p.userId)
+        .reduce((sum, current) => sum + current.pointsEarned, 0);
+      return { ...p, score: goalScore };
+    }).sort((a, b) => b.score - a.score);
+  }, [challenge, logs, selectedLeaderboardGoalId]);
+
+  const dailyProgress = useMemo(() => {
+    if (!challenge || !user || isNotStarted) return { current: 0, total: 0 };
+    let totalCurrent = 0;
+    let totalMax = 0;
+    challenge.goals.forEach(goal => {
+        const currentPeriodKey = getPeriodKey(goal.frequency, selectedDate);
+        const completionsCount = logs.filter(l =>
+            l.goalId === goal.id && l.userId === user.id &&
+            getPeriodKey(goal.frequency, new Date(l.timestamp)) === currentPeriodKey
+        ).length;
+        const goalMax = goal.maxCompletions || 1;
+        totalCurrent += Math.min(completionsCount, goalMax);
+        totalMax += goalMax;
+    });
+    return { current: totalCurrent, total: totalMax };
+  }, [challenge, logs, user, isNotStarted, selectedDate]);
+
+  const progressData = useMemo(() => {
+    if (!challenge) return { chart: [], userTotal: 0, groupAvg: 0 };
+    const days = eachDayOfInterval({ start: subDays(new Date(), 6), end: new Date() });
+    let cumulativeUser = 0;
+    let cumulativeGroupSum = 0;
+    const participantCount = challenge.participants.length || 1;
+    const chart = days.map(day => {
+       const dayLogs = logs.filter(l => {
+         const isSameDayLog = isSameDay(new Date(l.timestamp), day);
+         const matchesGoal = selectedProgressGoalId === 'total' || l.goalId === selectedProgressGoalId;
+         return isSameDayLog && matchesGoal;
+       });
+       const myDayPoints = dayLogs.filter(l => l.userId === user?.id).reduce((sum, l) => sum + l.pointsEarned, 0);
+       const totalDayPoints = dayLogs.reduce((sum, l) => sum + l.pointsEarned, 0);
+       const avgDayPoints = totalDayPoints / participantCount;
+       cumulativeUser += myDayPoints;
+       cumulativeGroupSum += avgDayPoints;
+       return { 
+         name: format(day, 'EEEEEE', { locale: dateLocale }),
+         'Jouw Punten': cumulativeUser, 
+         'Gemiddelde': Math.round(cumulativeGroupSum) 
+       };
+    });
+    return { chart, userTotal: cumulativeUser, groupAvg: Math.round(cumulativeGroupSum) };
+  }, [logs, challenge, user, dateLocale, selectedProgressGoalId]);
+
+  if (loadingInitial) return <LoadingScreen />;
+  if (!challenge) return <div className="p-8 text-center text-red-500">Challenge not found.</div>;
+
+  const isOwner = user?.id === challenge.creatorId;
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      <div className="flex items-center justify-between mb-2 px-4 md:px-0">
+         <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-medium">
+            <ArrowLeft size={20} /> {t('back')}
+         </Link>
+         <div className="flex gap-2">
+            {isOwner && (
+                <Link to={`/challenge/${challenge.id}/edit`} className="p-2 text-slate-400 hover:text-slate-700 bg-white rounded-lg border border-slate-200 shadow-sm">
+                    <Settings size={20} />
+                </Link>
+            )}
+            {isOwner ? (
+                <button onClick={() => { setDeleteConfirmText(''); setIsDeleteModalOpen(true); }} className="p-2 text-red-500 hover:bg-red-50 bg-white rounded-lg border border-slate-200 shadow-sm transition-colors" title={t('delete_challenge')}>
+                    <Trash2 size={20} />
+                </button>
+            ) : (
+                <button onClick={handleLeave} className="p-2 text-slate-500 hover:text-red-600 bg-white rounded-lg border border-slate-200 shadow-sm transition-colors" title={t('leave_challenge')}>
+                    <LogOut size={20} />
+                </button>
+            )}
+         </div>
+      </div>
+
+      <div className="flex flex-col gap-1 px-4 md:px-0">
+          <div className="flex items-start gap-3">
+             <h1 className="text-3xl font-bold text-slate-900 leading-tight tracking-tight">{challenge.name}</h1>
+             {isOwner && (
+                <span className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 text-[10px] font-bold border border-brand-200 uppercase tracking-tighter shrink-0">
+                   <ShieldCheck size={10} /> {t('host')}
+                </span>
+             )}
+          </div>
+          {isNotStarted && (
+             <div className="inline-flex items-center gap-2 text-orange-600 font-bold text-sm bg-orange-50 px-3 py-1 rounded-lg w-fit mt-1">
+                <Lock size={14} /> {t('starts_on')} {format(parseISO(challenge.startDate), 'd MMMM', { locale: dateLocale })}
+             </div>
+          )}
+      </div>
+
+      <div className="px-4 md:px-0 sticky top-0 z-30">
+        <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-slate-100 shadow-sm p-4">
+           <div className="flex justify-between items-end mb-2">
+              <span className="text-sm font-bold text-slate-600 tracking-tight">
+                {isToday ? t('daily_progress') : format(selectedDate, 'd MMM', { locale: dateLocale })}
+              </span>
+              <span className="text-sm font-black text-brand-600">{dailyProgress.current}/{dailyProgress.total}</span>
+           </div>
+           <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                  className={`h-full bg-brand-500 rounded-full transition-all duration-700 ease-out ${isNotStarted ? 'opacity-30' : ''}`} 
+                  style={{ width: `${dailyProgress.total ? (dailyProgress.current / dailyProgress.total) * 100 : 0}%` }} 
+              />
+           </div>
+        </div>
+      </div>
+
+      {/* Adjusted Tab Bar: Font size reduced to text-[10px] for mobile to ensure fitting 4 columns */}
+      <div className="grid grid-cols-4 border-b border-slate-200 px-4 md:px-0">
+        {[
+          { id: 'goals', label: t('my_goals') },
+          { id: 'leaderboard', label: t('leaderboard') },
+          { id: 'progress', label: t('progress') },
+          { id: 'chat', label: t('chat') },
+        ].map(tab => (
+          <button 
+            key={tab.id} 
+            onClick={() => setActiveTab(tab.id as any)} 
+            className={`py-3 px-0 text-[10px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            {tab.label}
+            {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-brand-500 rounded-t-full" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="min-h-[400px] pt-2 px-4 md:px-0 pb-10">
+        {activeTab === 'goals' && (
+          <div className="space-y-4">
+            {/* Date Navigator */}
+            <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3">
+              <button
+                onClick={() => canGoBack && setSelectedDate(prev => startOfDay(subDays(prev, 1)))}
+                disabled={!canGoBack}
+                className="p-2 rounded-xl hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft size={20} />
+              </button>
+              <button
+                onClick={() => setSelectedDate(startOfDay(new Date()))}
+                className="flex flex-col items-center gap-0.5 min-w-[140px]"
+              >
+                <span className="text-sm font-black text-slate-900 tracking-tight">
+                  {isToday ? (language === 'nl' ? 'Vandaag' : 'Today') : format(selectedDate, 'd MMMM', { locale: dateLocale })}
+                </span>
+                {!isToday && (
+                  <span className="text-[10px] font-bold text-brand-500 uppercase tracking-widest">
+                    {language === 'nl' ? 'Tik voor vandaag' : 'Tap for today'}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => !isToday && !isFutureDate && setSelectedDate(prev => startOfDay(addDays(prev, 1)))}
+                disabled={isToday || isFutureDate}
+                className="p-2 rounded-xl hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight size={20} />
+              </button>
+            </div>
+
+            {challenge.goals.map(goal => {
+              const GoalIcon = getIcon(goal.icon);
+              const currentPeriodKey = getPeriodKey(goal.frequency, selectedDate);
+              const completionsInPeriod = logs.filter(l => {
+                 if (l.goalId !== goal.id || l.userId !== user?.id) return false;
+                 return getPeriodKey(goal.frequency, new Date(l.timestamp)) === currentPeriodKey;
+              }).length;
+              const isCompleted = goal.maxCompletions ? completionsInPeriod >= goal.maxCompletions : false;
+              const isProcessing = processingGoalId === goal.id;
+              const isPenalty = goal.points < 0;
+
+              return (
+                <div key={goal.id} className={`bg-white rounded-2xl border border-slate-100 p-5 shadow-sm transition-all ${isNotStarted ? 'opacity-80 grayscale' : 'hover:shadow-md'}`}>
+                  <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${isCompleted ? (isPenalty ? 'bg-rose-100 text-rose-600' : 'bg-green-100 text-green-600') : (isPenalty ? 'bg-rose-50 text-rose-500' : 'bg-brand-50 text-brand-500')}`}>
+                           <GoalIcon size={24} strokeWidth={2.5} />
+                        </div>
+                        <div className="flex flex-col min-w-0">
+                            {/* Restored truncate for Goal Title to prevent card expansion */}
+                            <h3 className="font-bold text-slate-900 text-lg leading-tight truncate tracking-tight">{goal.title}</h3>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{t(goal.frequency as any)}</span>
+                                <span className={`text-xs font-bold ${isPenalty ? 'text-rose-500' : 'text-brand-600'}`}>
+                                    {goal.points >= 0 ? '+' : ''}{goal.points} pts • {completionsInPeriod}/{goal.maxCompletions || 1}
+                                </span>
+                            </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        {completionsInPeriod > 0 && !isNotStarted && (
+                           <button disabled={isProcessing} onClick={() => handleReduceGoal(goal.id)} className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 transition-all bg-white active:scale-90">
+                              {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Minus size={18} />}
+                           </button>
+                        )}
+                        <button 
+                            disabled={isCompleted || isProcessing} 
+                            onClick={() => handleLogGoal(goal)} 
+                            className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center transition-all shadow-sm active:scale-95 ${
+                                isCompleted 
+                                    ? (isPenalty ? 'bg-rose-500 border-rose-500 text-white' : 'bg-green-500 border-green-500 text-white') 
+                                    : isNotStarted 
+                                        ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' 
+                                        : isPenalty 
+                                            ? 'border-slate-200 hover:border-rose-300 bg-white text-transparent hover:text-rose-300'
+                                            : 'border-slate-200 hover:border-brand-300 bg-white text-transparent hover:text-brand-300'
+                            }`}
+                        >
+                           {isProcessing ? <Loader2 size={24} className="animate-spin" /> : (isNotStarted ? <Lock size={18} /> : (isCompleted ? <Check size={24} strokeWidth={3} /> : <Check size={24} className="text-slate-100" />))}
+                        </button>
+                      </div>
+                  </div>
+                  {isCompleted && (
+                      <div className={`mt-4 border rounded-xl py-2 px-3 flex items-center gap-2 text-xs font-bold animate-fadeIn ${isPenalty ? 'bg-rose-50/50 border-rose-100/50 text-rose-700' : 'bg-green-50/50 border-green-100/50 text-green-700'}`}>
+                          {isPenalty ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
+                          <span>{isPenalty ? 'Limit reached for this habit.' : t('completed_today')}</span>
+                      </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {activeTab === 'leaderboard' && (
+          <div className="animate-fadeIn space-y-6">
+            <div className="relative">
+              <select value={selectedLeaderboardGoalId} onChange={(e) => setSelectedLeaderboardGoalId(e.target.value)} className="w-full pl-4 pr-10 py-4 bg-white border border-slate-200 rounded-2xl text-base font-black text-slate-900 outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none shadow-sm transition-all">
+                <option value="total">{language === 'nl' ? 'Totaal Klassement' : 'Overall Standing'}</option>
+                {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
+            </div>
+            <div className="space-y-3">
+              {currentLeaderboard.map((participant, index) => (
+                <div key={participant.userId} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${participant.userId === user?.id ? 'bg-brand-50 border-brand-200 ring-1 ring-brand-500/10' : 'bg-white border-slate-100 shadow-sm'}`}>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-8 h-8 flex items-center justify-center font-black rounded-lg text-xs shadow-sm ${index === 0 ? 'bg-yellow-400 text-white' : index === 1 ? 'bg-slate-300 text-white' : index === 2 ? 'bg-orange-400 text-white' : 'text-slate-400 bg-slate-50 border border-slate-100'}`}>
+                      {index + 1}
+                    </div>
+                    <img src={participant.avatar} alt={participant.name} className="w-10 h-10 rounded-full bg-slate-200 object-cover shadow-sm border-2 border-white" />
+                    <span className={`font-bold truncate max-w-[150px] md:max-w-none tracking-tight ${participant.userId === user?.id ? 'text-brand-900' : 'text-slate-900'}`}>{participant.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-mono font-black text-2xl tracking-tighter ${participant.score < 0 ? 'text-rose-500' : 'text-slate-800'}`}>{participant.score}</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-1">pts</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {activeTab === 'progress' && (
+          <div className="animate-fadeIn space-y-8">
+            <div className="space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedProgressGoalId === 'total' ? t('progress') : challenge.goals.find(g => g.id === selectedProgressGoalId)?.title}</h2>
+                <div className="relative min-w-[200px]">
+                  <select value={selectedProgressGoalId} onChange={(e) => setSelectedProgressGoalId(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none shadow-sm appearance-none">
+                    <option value="total">Alle Doelen</option>
+                    {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                </div>
+              </div>
+              <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm overflow-hidden">
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={progressData.chart} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={10} tickMargin={10} stroke="#94a3b8" fontWeight="bold" />
+                      <YAxis axisLine={false} tickLine={false} fontSize={10} stroke="#94a3b8" fontWeight="bold" />
+                      <Tooltip cursor={{ stroke: '#f97316', strokeWidth: 1, strokeDasharray: '4 4' }} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', padding: '12px' }} />
+                      <Legend verticalAlign="bottom" align="center" iconType="circle" formatter={(value) => <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">{value}</span>} />
+                      <Line type="monotone" dataKey="Gemiddelde" stroke="#cbd5e1" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 0 }} activeDot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="Jouw Punten" stroke="#f97316" strokeWidth={4} dot={{ r: 4, fill: '#f97316', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+               <div className="bg-brand-50 border border-brand-100 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-black text-brand-700 uppercase tracking-widest">{t('points').toLowerCase()}</span>
+                  <div className="mt-1"><span className={`text-3xl font-black tracking-tighter ${progressData.userTotal < 0 ? 'text-rose-500' : 'text-brand-600'}`}>{progressData.userTotal}</span></div>
+               </div>
+               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Groep</span>
+                  <div className="mt-1"><span className={`text-4xl font-black tracking-tighter ${progressData.groupAvg < 0 ? 'text-rose-500' : 'text-slate-800'}`}>{progressData.groupAvg}</span></div>
+               </div>
+            </div>
+          </div>
+        )}
+        {activeTab === 'chat' && (
+            <div className="flex flex-col bg-white rounded-3xl border border-slate-100 shadow-sm h-[500px] overflow-hidden relative animate-fadeIn">
+                <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                    {messages.length === 0 ? (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 py-10">
+                            <MessageCircle size={48} strokeWidth={1} />
+                            <p className="text-sm font-medium">Start the conversation!</p>
+                        </div>
+                    ) : (
+                        messages.map((m) => {
+                            const isMe = m.userId === user?.id;
+                            const date = m.createdAt ? new Date(m.createdAt) : new Date();
+                            const formattedTime = !isNaN(date.getTime()) ? format(date, 'HH:mm') : '--:--';
+
+                            return (
+                                <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fadeIn`}>
+                                    <div className={`flex max-w-[80%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                                        <img src={m.userAvatar || `https://api.dicebear.com/9.x/initials/svg?seed=${m.userName}`} alt={m.userName} className="w-8 h-8 rounded-full bg-slate-100 shrink-0" />
+                                        <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                                            {!isMe && <span className="text-[10px] font-bold text-slate-500 mb-1 ml-1 tracking-wider">{m.userName}</span>}
+                                            <div className={`px-4 py-2 rounded-2xl text-sm ${isMe ? 'bg-brand-500 text-white rounded-tr-none shadow-md shadow-brand-500/10' : 'bg-slate-100 text-slate-900 rounded-tl-none'}`}>
+                                                <p className="selectable leading-relaxed">{m.messageText}</p>
+                                            </div>
+                                            <span className="text-[9px] text-slate-400 mt-1 px-1">{formattedTime}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+                <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-50 bg-white flex gap-2 items-end">
+                    <textarea 
+                        rows={1}
+                        placeholder={t('type_message')} 
+                        className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500 text-sm max-h-32 transition-all resize-none"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendMessage(e);
+                            }
+                        }}
+                    />
+                    <button 
+                        type="submit" 
+                        disabled={!newMessage.trim() || isSending}
+                        className="w-12 h-12 rounded-2xl bg-brand-500 text-white flex items-center justify-center shadow-lg shadow-brand-500/20 active:scale-90 transition-all disabled:opacity-50 disabled:grayscale"
+                    >
+                        {isSending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} strokeWidth={2.5} />}
+                    </button>
+                </form>
+            </div>
+        )}
+      </div>
+
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn" onClick={() => !isDeleting && setIsDeleteModalOpen(false)}>
+           <div className="bg-white rounded-3xl p-6 w-full max-sm shadow-2xl animate-scaleIn relative" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setIsDeleteModalOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full transition-colors" disabled={isDeleting}><X size={20} /></button>
+              <div className="flex flex-col items-center text-center mb-6">
+                 <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-4 shadow-sm"><AlertTriangle size={28} /></div>
+                 <h3 className="text-xl font-bold text-slate-900 mb-2 tracking-tighter">{t('delete_confirm_title')}</h3>
+                 <p className="text-slate-500 text-sm font-medium leading-relaxed">Type de naam om te verwijderen: <br/><span className="text-slate-900 font-bold block mt-2 text-base select-all">"{challenge.name}"</span></p>
+              </div>
+              <div className="space-y-4">
+                <input autoFocus type="text" placeholder={challenge.name} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-slate-900 font-bold text-center tracking-widest" value={deleteConfirmText} onChange={e => setDeleteConfirmText(e.target.value)} />
+                <button disabled={deleteConfirmText !== challenge.name || isDeleting} onClick={handleConfirmDelete} className="w-full py-4 px-6 rounded-2xl font-bold text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-50 uppercase tracking-widest shadow-lg shadow-red-600/20 flex items-center justify-center gap-2">
+                   {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />} {t('delete')}
+                </button>
+              </div>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ChallengeDetail;
