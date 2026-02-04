@@ -202,8 +202,9 @@ const SupabaseApi = {
 
     const challengeIds = participations.map(p => p.challenge_id);
 
-    // Step 2: Fetch challenges with goals and participants (NO goal_completions)
-    const { data: challenges, error } = await supabase
+    // Step 2 + 3: Fetch challenges and scores IN PARALLEL (both only depend on challengeIds)
+    const [challengeResult, scoreResult] = await Promise.all([
+      supabase
         .from('challenges')
         .select(`
             *,
@@ -211,26 +212,27 @@ const SupabaseApi = {
             challenge_participants (*, profiles (*))
         `)
         .in('id', challengeIds)
-        .order('created_at', { ascending: false });
-
-    if (error) {
-      logError(`[DB Error] getAllChallenges (challenges):`, error.message);
-      throw error;
-    }
-
-    if (!challenges || challenges.length === 0) return [];
-
-    // Step 3: Fetch aggregated scores per user per challenge in ONE query
-    // Instead of fetching every individual completion row, we just get the sums
-    const { data: scoreData, error: scoreError } = await supabase
+        .order('created_at', { ascending: false }),
+      supabase
         .from('goal_completions')
         .select('challenge_id, user_id, points_at_time')
-        .in('challenge_id', challengeIds);
+        .in('challenge_id', challengeIds)
+    ]);
 
-    if (scoreError) {
-      logError(`[DB Error] getAllChallenges (scores):`, scoreError.message);
+    if (challengeResult.error) {
+      logError(`[DB Error] getAllChallenges (challenges):`, challengeResult.error.message);
+      throw challengeResult.error;
+    }
+
+    const challenges = challengeResult.data;
+    if (!challenges || challenges.length === 0) return [];
+
+    if (scoreResult.error) {
+      logError(`[DB Error] getAllChallenges (scores):`, scoreResult.error.message);
       // Non-fatal: proceed with zero scores rather than failing
     }
+
+    const scoreData = scoreResult.data;
 
     // Build a score map: { challengeId -> { userId -> totalScore } }
     const scoreMaps: Record<string, Record<string, number>> = {};
@@ -260,29 +262,32 @@ const SupabaseApi = {
   getChallengeById: async (id: string): Promise<Challenge | undefined> => {
     log(`[DB] getChallengeById: ${id}`);
 
-    // Fetch challenge structure (no completions)
-    const { data: challenge, error: cError } = await supabase
-      .from('challenges')
-      .select(`
-        *,
-        challenge_goals (*),
-        challenge_participants (*, profiles (*))
-      `)
-      .eq('id', id)
-      .single();
+    // Fetch challenge structure and scores IN PARALLEL
+    const [challengeResult, scoreResult] = await Promise.all([
+      supabase
+        .from('challenges')
+        .select(`
+          *,
+          challenge_goals (*),
+          challenge_participants (*, profiles (*))
+        `)
+        .eq('id', id)
+        .single(),
+      supabase
+        .from('goal_completions')
+        .select('user_id, points_at_time')
+        .eq('challenge_id', id)
+    ]);
 
-    if (cError) {
-      logError(`[DB Error] getChallengeById:`, cError.message);
+    if (challengeResult.error) {
+      logError(`[DB Error] getChallengeById:`, challengeResult.error.message);
       return undefined;
     }
 
+    const challenge = challengeResult.data;
     if (!challenge) return undefined;
 
-    // Fetch aggregated scores for this challenge only
-    const { data: scoreData } = await supabase
-        .from('goal_completions')
-        .select('user_id, points_at_time')
-        .eq('challenge_id', id);
+    const scoreData = scoreResult.data;
 
     const scoreMap: Record<string, number> = {};
     if (scoreData) {
