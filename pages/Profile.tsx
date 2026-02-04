@@ -1,10 +1,10 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { api } from '../services/dataService';
 import Card from '../components/Card';
-import { User, Save, Camera, Mail, Lock, LogOut, Globe, Loader2, ArrowLeft } from 'lucide-react';
+import { User, Save, Mail, Lock, LogOut, Globe, Loader2, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Language } from '../services/translations';
@@ -13,11 +13,9 @@ const Profile: React.FC = () => {
   const { user, updatePassword, logout, refreshUser } = useAuth();
   const { t, language, setLanguage } = useLanguage();
   const [name, setName] = useState(user?.name || '');
-  const [avatarUrl, setAvatarUrl] = useState(user?.avatar || '');
   const [selectedLang, setSelectedLang] = useState<Language>(language);
   const [loading, setLoading] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync selectedLang if provider language changes externally (e.g. from profile load)
   useEffect(() => {
@@ -28,7 +26,6 @@ const Profile: React.FC = () => {
   useEffect(() => {
     if (user) {
         setName(user.name);
-        setAvatarUrl(user.avatar || '');
     }
   }, [user]);
 
@@ -43,7 +40,7 @@ const Profile: React.FC = () => {
     setLoading(true);
     try {
         // 1. Save to DB (resilient update handles missing columns)
-        await api.updateUserProfile(user.id, name, avatarUrl, selectedLang);
+        await api.updateUserProfile(user.id, name, undefined, selectedLang);
         
         // 2. Update local language context
         setLanguage(selectedLang);
@@ -83,18 +80,7 @@ const Profile: React.FC = () => {
       }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onloadend = () => {
-          setAvatarUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-  };
-
-  const defaultAvatar = `https://api.dicebear.com/9.x/initials/svg?seed=${name}`;
+  const defaultAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id || name}`;
 
   return (
     <div className="max-w-xl mx-auto space-y-6">
@@ -109,30 +95,13 @@ const Profile: React.FC = () => {
       <Card>
         <form onSubmit={handleProfileSave} className="space-y-6">
             <div className="flex flex-col items-center mb-6">
-                <div 
-                    className="relative cursor-pointer group"
-                    onClick={() => fileInputRef.current?.click()}
-                >
+                <div className="relative">
                     <img 
-                        src={avatarUrl || defaultAvatar} 
+                        src={defaultAvatar} 
                         alt="Profile" 
                         className="w-24 h-24 rounded-full bg-slate-50 border-4 border-white shadow-md object-cover" 
                     />
-                    <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
-                        <Camera size={24} />
-                    </div>
-                    <div className="absolute bottom-0 right-0 bg-brand-500 text-white p-2 rounded-full shadow-lg pointer-events-none">
-                        <Camera size={14} />
-                    </div>
                 </div>
-                <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    onChange={handleFileChange} 
-                    className="hidden" 
-                    accept="image/*"
-                />
-                <p className="text-sm text-slate-500 mt-2">{t('tap_change')}</p>
             </div>
 
             <div>
