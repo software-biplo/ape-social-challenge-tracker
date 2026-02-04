@@ -63,7 +63,7 @@ const mapChallenge = (
     return {
       userId: userId,
       name: profile?.display_name || 'Anonymous',
-      avatar: profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
+      avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
       score: userScore
     };
   });
@@ -124,7 +124,7 @@ const SupabaseApi = {
       log(`[DB] getUserProfile: ${userId}`);
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url, preferred_language')
+        .select('id, display_name, preferred_language')
         .eq('id', userId)
         .maybeSingle();
 
@@ -138,7 +138,7 @@ const SupabaseApi = {
           id: userId,
           email: email,
           name: profile.display_name,
-          avatar: profile.avatar_url,
+          avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
           preferredLanguage: profile.preferred_language
         };
       }
@@ -266,7 +266,7 @@ const SupabaseApi = {
       .select(`
         id, name, description, start_at, end_at, max_players, status, owner_id, join_code,
         challenge_goals (id, title, description, icon_key, points, frequency, max_completions_per_period, created_at),
-        challenge_participants (user_id, profiles (display_name, avatar_url))
+        challenge_participants (user_id, profiles (display_name))
       `)
       .eq('id', id)
       .single();
