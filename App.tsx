@@ -13,6 +13,7 @@ import ChallengeWizard from './pages/ChallengeWizard';
 import ChallengeDetail from './pages/ChallengeDetail';
 import Profile from './pages/Profile';
 import { Toaster } from 'sonner';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -126,6 +127,7 @@ const App: React.FC = () => {
             <AppRoutes />
           </HashRouter>
           <Toaster position="top-center" richColors />
+          <SpeedInsights />
         </ChallengeProvider>
       </AuthProvider>
     </LanguageProvider>
