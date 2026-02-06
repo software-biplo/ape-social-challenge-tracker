@@ -1,24 +1,26 @@
 
 import React, { createContext, useContext, useState, ReactNode, useCallback, useRef } from 'react';
-import { Challenge, CompletionLog } from '../types';
+import { Challenge, ChallengeStats, CompletionLog } from '../types';
 import { api } from '../services/dataService';
 import { useAuth } from './AuthContext';
 
 // Cache TTL: don't re-fetch if data was fetched less than this many ms ago
 const CACHE_TTL_MS = 30_000; // 30 seconds
 
+const EMPTY_STATS: ChallengeStats = { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] };
+
 interface ChallengeContextType {
   challenges: Challenge[] | null;
   challengeCache: Record<string, Challenge>;
-  logsCache: Record<string, CompletionLog[]>;
+  statsCache: Record<string, ChallengeStats>;
   refreshChallenges: (force?: boolean) => Promise<void>;
   fetchChallengeDetail: (id: string) => Promise<void>;
-  fetchLogs: (id: string) => Promise<void>;
+  fetchStats: (id: string) => Promise<void>;
   getChallenge: (id: string) => Promise<Challenge | undefined>;
-  getLogs: (id: string) => Promise<CompletionLog[]>;
+  getStats: (id: string) => Promise<ChallengeStats>;
   invalidateChallenge: (id: string) => void;
   addOptimisticLog: (id: string, log: CompletionLog) => void;
-  removeOptimisticLog: (challengeId: string, logId: string) => void;
+  removeOptimisticLog: (challengeId: string, logId: string, log: CompletionLog) => void;
   clearCache: () => void;
   isLoading: boolean;
 }
@@ -32,19 +34,19 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   // Use state for caching to make the data reactive across the app
   const [challengeCache, setChallengeCache] = useState<Record<string, Challenge>>({});
-  const [logsCache, setLogsCache] = useState<Record<string, CompletionLog[]>>({});
+  const [statsCache, setStatsCache] = useState<Record<string, ChallengeStats>>({});
 
   const hasLoadedRef = useRef(false);
 
   // --- TTL tracking: timestamps of last successful fetch ---
   const lastFetchAllRef = useRef<number>(0);
   const lastFetchDetailRef = useRef<Record<string, number>>({});
-  const lastFetchLogsRef = useRef<Record<string, number>>({});
+  const lastFetchStatsRef = useRef<Record<string, number>>({});
 
   // --- In-flight deduplication: prevent duplicate concurrent requests ---
   const inFlightAllRef = useRef<Promise<void> | null>(null);
   const inFlightDetailRef = useRef<Record<string, Promise<void>>>({});
-  const inFlightLogsRef = useRef<Record<string, Promise<void>>>({});
+  const inFlightStatsRef = useRef<Record<string, Promise<void>>>({});
 
   const refreshChallenges = useCallback(async (force?: boolean) => {
     if (!user) return;
@@ -136,12 +138,12 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
               };
             });
 
-            return { 
-              ...prev, 
-              [id]: { 
-                ...latest, 
-                participants: mergedParticipants 
-              } 
+            return {
+              ...prev,
+              [id]: {
+                ...latest,
+                participants: mergedParticipants
+              }
             };
           });
           lastFetchDetailRef.current[id] = Date.now();
@@ -157,26 +159,26 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
     return request;
   }, []);
 
-  const fetchLogs = useCallback(async (id: string) => {
+  const fetchStats = useCallback(async (id: string) => {
     // Skip if recently fetched
-    if (Date.now() - (lastFetchLogsRef.current[id] || 0) < CACHE_TTL_MS) return;
+    if (Date.now() - (lastFetchStatsRef.current[id] || 0) < CACHE_TTL_MS) return;
 
     // Deduplicate
-    if (inFlightLogsRef.current[id]) return inFlightLogsRef.current[id];
+    if (inFlightStatsRef.current[id]) return inFlightStatsRef.current[id];
 
     const request = (async () => {
       try {
-        const latest = await api.getLogs(id);
-        setLogsCache(prev => ({ ...prev, [id]: latest }));
-        lastFetchLogsRef.current[id] = Date.now();
+        const stats = await api.getStats(id);
+        setStatsCache(prev => ({ ...prev, [id]: stats }));
+        lastFetchStatsRef.current[id] = Date.now();
 
-        // Compute participant scores from logs (avoids separate scores query)
+        // Update participant scores from aggregated stats
         setChallengeCache(prev => {
           const challenge = prev[id];
           if (!challenge) return prev;
           const scoreMap: Record<string, number> = {};
-          for (const log of latest) {
-            scoreMap[log.userId] = (scoreMap[log.userId] || 0) + log.pointsEarned;
+          for (const s of stats.scores) {
+            scoreMap[s.user_id] = s.total_score;
           }
           return {
             ...prev,
@@ -190,13 +192,13 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
           };
         });
       } catch (e) {
-        console.error("Failed to fetch logs", e);
+        console.error("Failed to fetch stats", e);
       } finally {
-        delete inFlightLogsRef.current[id];
+        delete inFlightStatsRef.current[id];
       }
     })();
 
-    inFlightLogsRef.current[id] = request;
+    inFlightStatsRef.current[id] = request;
     return request;
   }, []);
 
@@ -206,20 +208,67 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
    */
   const invalidateChallenge = useCallback((id: string) => {
     lastFetchDetailRef.current[id] = 0;
-    lastFetchLogsRef.current[id] = 0;
+    lastFetchStatsRef.current[id] = 0;
   }, []);
 
   /**
-   * Optimistically add a completion log to the cache.
-   * Updates both the logs cache and the challenge participant scores.
-   * This gives instant UI feedback before the server confirms.
+   * Optimistically add a completion log to the stats cache.
+   * Updates scores, goal_scores, period_counts, and participant scores.
    */
   const addOptimisticLog = useCallback((challengeId: string, log: CompletionLog) => {
-    // Add to logs cache
-    setLogsCache(prev => ({
-      ...prev,
-      [challengeId]: [log, ...(prev[challengeId] || [])]
-    }));
+    setStatsCache(prev => {
+      const stats = prev[challengeId] || EMPTY_STATS;
+
+      // Update scores
+      const existingScore = stats.scores.find(s => s.user_id === log.userId);
+      const newScores = existingScore
+        ? stats.scores.map(s => s.user_id === log.userId ? { ...s, total_score: s.total_score + log.pointsEarned } : s)
+        : [...stats.scores, { user_id: log.userId, total_score: log.pointsEarned }];
+
+      // Update goal_scores
+      const existingGoalScore = stats.goalScores.find(gs => gs.user_id === log.userId && gs.goal_id === log.goalId);
+      const newGoalScores = existingGoalScore
+        ? stats.goalScores.map(gs => gs.user_id === log.userId && gs.goal_id === log.goalId ? { ...gs, score: gs.score + log.pointsEarned } : gs)
+        : [...stats.goalScores, { user_id: log.userId, goal_id: log.goalId, score: log.pointsEarned }];
+
+      // Update period_counts (we need to derive period_key from the log)
+      // The period_key is already set server-side, but for optimistic updates
+      // we increment the count for the matching period
+      const newPeriodCounts = [...stats.periodCounts];
+      // Period key is generated at log time — for optimistic display we just
+      // add a placeholder entry. The real data refreshes shortly after.
+      const dayStr = log.timestamp.slice(0, 10); // YYYY-MM-DD
+      const optimisticPeriodKey = `daily-${dayStr}`;
+      const existingPc = newPeriodCounts.findIndex(
+        pc => pc.user_id === log.userId && pc.goal_id === log.goalId && pc.period_key === optimisticPeriodKey
+      );
+      if (existingPc >= 0) {
+        newPeriodCounts[existingPc] = { ...newPeriodCounts[existingPc], count: newPeriodCounts[existingPc].count + 1 };
+      } else {
+        newPeriodCounts.push({ user_id: log.userId, goal_id: log.goalId, period_key: optimisticPeriodKey, count: 1 });
+      }
+
+      // Update daily_points
+      const newDailyPoints = [...stats.dailyPoints];
+      const existingDp = newDailyPoints.findIndex(
+        dp => dp.user_id === log.userId && dp.goal_id === log.goalId && dp.day === dayStr
+      );
+      if (existingDp >= 0) {
+        newDailyPoints[existingDp] = { ...newDailyPoints[existingDp], points: newDailyPoints[existingDp].points + log.pointsEarned };
+      } else {
+        newDailyPoints.push({ user_id: log.userId, goal_id: log.goalId, day: dayStr, points: log.pointsEarned });
+      }
+
+      return {
+        ...prev,
+        [challengeId]: {
+          scores: newScores,
+          goalScores: newGoalScores,
+          periodCounts: newPeriodCounts,
+          dailyPoints: newDailyPoints
+        }
+      };
+    });
 
     // Update participant score in challenge cache
     setChallengeCache(prev => {
@@ -240,35 +289,61 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   /**
-   * Optimistically remove a completion log from the cache.
-   * Updates both the logs cache and the challenge participant scores.
+   * Optimistically remove a completion log from the stats cache.
+   * Now requires the full log to be passed so we can adjust aggregates.
    */
-  const removeOptimisticLog = useCallback((challengeId: string, logId: string) => {
-    setLogsCache(prev => {
-      const logs = prev[challengeId] || [];
-      const removedLog = logs.find(l => l.id === logId);
-      if (!removedLog) return prev;
+  const removeOptimisticLog = useCallback((challengeId: string, _logId: string, log: CompletionLog) => {
+    setStatsCache(prev => {
+      const stats = prev[challengeId];
+      if (!stats) return prev;
 
-      // Also update the participant score
-      setChallengeCache(prevCache => {
-        const challenge = prevCache[challengeId];
-        if (!challenge) return prevCache;
-        return {
-          ...prevCache,
-          [challengeId]: {
-            ...challenge,
-            participants: challenge.participants.map(p =>
-              p.userId === removedLog.userId
-                ? { ...p, score: p.score - removedLog.pointsEarned }
-                : p
-            )
-          }
-        };
-      });
+      const newScores = stats.scores.map(s =>
+        s.user_id === log.userId ? { ...s, total_score: s.total_score - log.pointsEarned } : s
+      );
+
+      const newGoalScores = stats.goalScores.map(gs =>
+        gs.user_id === log.userId && gs.goal_id === log.goalId ? { ...gs, score: gs.score - log.pointsEarned } : gs
+      );
+
+      const dayStr = log.timestamp.slice(0, 10);
+      const optimisticPeriodKey = `daily-${dayStr}`;
+      const newPeriodCounts = stats.periodCounts.map(pc =>
+        pc.user_id === log.userId && pc.goal_id === log.goalId && pc.period_key === optimisticPeriodKey
+          ? { ...pc, count: Math.max(0, pc.count - 1) }
+          : pc
+      );
+
+      const newDailyPoints = stats.dailyPoints.map(dp =>
+        dp.user_id === log.userId && dp.goal_id === log.goalId && dp.day === dayStr
+          ? { ...dp, points: dp.points - log.pointsEarned }
+          : dp
+      );
 
       return {
         ...prev,
-        [challengeId]: logs.filter(l => l.id !== logId)
+        [challengeId]: {
+          scores: newScores,
+          goalScores: newGoalScores,
+          periodCounts: newPeriodCounts,
+          dailyPoints: newDailyPoints
+        }
+      };
+    });
+
+    // Update participant score in challenge cache
+    setChallengeCache(prev => {
+      const challenge = prev[challengeId];
+      if (!challenge) return prev;
+      return {
+        ...prev,
+        [challengeId]: {
+          ...challenge,
+          participants: challenge.participants.map(p =>
+            p.userId === log.userId
+              ? { ...p, score: p.score - log.pointsEarned }
+              : p
+          )
+        }
       };
     });
   }, []);
@@ -294,44 +369,44 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
     return latest;
   }, [challengeCache, fetchChallengeDetail]);
 
-  const getLogs = useCallback(async (id: string): Promise<CompletionLog[]> => {
-    const cached = logsCache[id];
+  const getStats = useCallback(async (id: string): Promise<ChallengeStats> => {
+    const cached = statsCache[id];
 
     if (cached) {
       // Background refresh only if TTL expired
-      const lastFetch = lastFetchLogsRef.current[id] || 0;
+      const lastFetch = lastFetchStatsRef.current[id] || 0;
       if (Date.now() - lastFetch >= CACHE_TTL_MS) {
-        fetchLogs(id); // fire-and-forget, deduplicated
+        fetchStats(id); // fire-and-forget, deduplicated
       }
       return cached;
     }
 
-    const latest = await api.getLogs(id);
-    setLogsCache(prev => ({ ...prev, [id]: latest }));
-    lastFetchLogsRef.current[id] = Date.now();
+    const latest = await api.getStats(id);
+    setStatsCache(prev => ({ ...prev, [id]: latest }));
+    lastFetchStatsRef.current[id] = Date.now();
     return latest;
-  }, [logsCache, fetchLogs]);
+  }, [statsCache, fetchStats]);
 
   const clearCache = useCallback(() => {
     setChallenges(null);
     setChallengeCache({});
-    setLogsCache({});
+    setStatsCache({});
     hasLoadedRef.current = false;
     lastFetchAllRef.current = 0;
     lastFetchDetailRef.current = {};
-    lastFetchLogsRef.current = {};
+    lastFetchStatsRef.current = {};
   }, []);
 
   return (
     <ChallengeContext.Provider value={{
       challenges,
       challengeCache,
-      logsCache,
+      statsCache,
       refreshChallenges,
       fetchChallengeDetail,
-      fetchLogs,
+      fetchStats,
       getChallenge,
-      getLogs,
+      getStats,
       invalidateChallenge,
       addOptimisticLog,
       removeOptimisticLog,

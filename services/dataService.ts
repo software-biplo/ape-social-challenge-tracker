@@ -1,6 +1,6 @@
 
 import { supabase } from '../lib/supabase';
-import { Challenge, CompletionLog, User, Frequency, ChatMessage } from '../types';
+import { Challenge, ChallengeStats, CompletionLog, User, Frequency, ChatMessage } from '../types';
 import { format } from 'date-fns';
 import { Language } from './translations';
 
@@ -609,6 +609,37 @@ const SupabaseApi = {
   },
 
   /**
+   * Find the most recent completion log for a user/goal/period.
+   * Used by handleReduceGoal to get the log ID to delete.
+   */
+  getLastLog: async (goalId: string, userId: string, periodKey: string): Promise<CompletionLog | null> => {
+    log(`[DB] getLastLog: goal=${goalId} user=${userId} period=${periodKey}`);
+    const { data, error } = await supabase
+      .from('goal_completions')
+      .select('id, challenge_id, goal_id, user_id, completion_at, points_at_time')
+      .eq('goal_id', goalId)
+      .eq('user_id', userId)
+      .eq('period_key', periodKey)
+      .order('completion_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error || !data) {
+      if (error && error.code !== 'PGRST116') logError(`[DB Error] getLastLog:`, error.message);
+      return null;
+    }
+
+    return {
+      id: data.id,
+      challengeId: data.challenge_id,
+      goalId: data.goal_id,
+      userId: data.user_id,
+      timestamp: data.completion_at,
+      pointsEarned: data.points_at_time
+    };
+  },
+
+  /**
    * OPTIMIZED: Added ordering and optional date range filtering.
    * Orders by completion_at descending so most recent come first.
    */
@@ -641,6 +672,45 @@ const SupabaseApi = {
        timestamp: l.completion_at,
        pointsEarned: l.points_at_time
      }));
+  },
+
+  /**
+   * Fetch all aggregated stats for a challenge via RPC.
+   * Replaces getLogs for score/leaderboard/progress calculations,
+   * avoiding the PostgREST 1000-row default limit.
+   */
+  getStats: async (challengeId: string): Promise<ChallengeStats> => {
+    log(`[DB] getStats: ${challengeId}`);
+    const { data, error } = await supabase.rpc('get_challenge_stats', {
+      p_challenge_id: challengeId
+    });
+
+    if (error) {
+      logError(`[DB Error] getStats:`, error.message);
+      return { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] };
+    }
+
+    const raw = data || {};
+    return {
+      scores: raw.scores || [],
+      goalScores: (raw.goal_scores || []).map((gs: any) => ({
+        user_id: gs.user_id,
+        goal_id: gs.goal_id,
+        score: gs.score
+      })),
+      periodCounts: (raw.period_counts || []).map((pc: any) => ({
+        user_id: pc.user_id,
+        goal_id: pc.goal_id,
+        period_key: pc.period_key,
+        count: pc.count
+      })),
+      dailyPoints: (raw.daily_points || []).map((dp: any) => ({
+        user_id: dp.user_id,
+        goal_id: dp.goal_id,
+        day: dp.day,
+        points: dp.points
+      }))
+    };
   },
 
   // --- Chat API ---

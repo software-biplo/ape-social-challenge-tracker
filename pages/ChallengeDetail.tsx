@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Challenge, CompletionLog, Goal, ChatMessage } from '../types';
+import { Challenge, ChallengeStats, CompletionLog, Goal, ChatMessage } from '../types';
 import { api, getPeriodKey } from '../services/dataService';
 import { getIcon } from '../services/iconService';
 import { useAuth } from '../context/AuthContext';
@@ -19,13 +19,13 @@ import { toast } from 'sonner';
 const ChallengeDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { challengeCache, logsCache, fetchChallengeDetail, fetchLogs, refreshChallenges, invalidateChallenge, addOptimisticLog, removeOptimisticLog } = useChallenges();
+  const { challengeCache, statsCache, fetchChallengeDetail, fetchStats, refreshChallenges, invalidateChallenge, addOptimisticLog, removeOptimisticLog } = useChallenges();
   const { t, dateLocale, language } = useLanguage();
   const navigate = useNavigate();
   
   // Deriving data directly from Context Cache for reactivity
   const challenge = id ? challengeCache[id] : undefined;
-  const logs = id ? (logsCache[id] || []) : [];
+  const stats: ChallengeStats = id ? (statsCache[id] || { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] }) : { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] };
 
   const [activeTab, setActiveTab] = useState<'goals' | 'leaderboard' | 'progress' | 'chat'>('goals');
   const [loadingInitial, setLoadingInitial] = useState(!challenge);
@@ -59,12 +59,12 @@ const ChallengeDetail: React.FC = () => {
         } finally {
           setLoadingInitial(false);
         }
-        // Logs load in background — scores update reactively when they arrive
-        fetchLogs(id);
+        // Stats load in background — scores update reactively when they arrive
+        fetchStats(id);
       };
       init();
     }
-  }, [id, fetchChallengeDetail, fetchLogs]);
+  }, [id, fetchChallengeDetail, fetchStats]);
 
   // Real-time Chat Subscription
   // OPTIMIZED: Use payload.new directly + local participant profile cache
@@ -193,13 +193,13 @@ const ChallengeDetail: React.FC = () => {
         // Fire actual DB write in background with selected date
         await api.logGoalCompletion(id, goal.id, user.id, goal.points, goal.frequency, selectedDate);
 
-        // Invalidate TTL and refresh in background to get real IDs
+        // Invalidate TTL and refresh in background to get real data
         invalidateChallenge(id);
         fetchChallengeDetail(id);
-        fetchLogs(id);
+        fetchStats(id);
     } catch (e: any) {
         // Rollback optimistic update on failure
-        removeOptimisticLog(id, optimisticId);
+        removeOptimisticLog(id, optimisticId, optimisticLog);
         toast.error(e.message || t('error_generic'));
     } finally {
         pendingCompletionsRef.current[pendingKey] = Math.max(0, (pendingCompletionsRef.current[pendingKey] || 1) - 1);
@@ -212,34 +212,36 @@ const ChallengeDetail: React.FC = () => {
     if (!currentGoal) return;
 
     const currentPeriodKey = getPeriodKey(currentGoal.frequency, selectedDate);
-    const userLogsInPeriod = logs
-        .filter(l =>
-            l.goalId === goalId &&
-            l.userId === user.id &&
-            getPeriodKey(currentGoal.frequency, new Date(l.timestamp)) === currentPeriodKey
-        )
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const currentCount = stats.periodCounts.find(
+      pc => pc.goal_id === goalId && pc.user_id === user.id && pc.period_key === currentPeriodKey
+    )?.count || 0;
+    if (currentCount === 0) return;
 
-    if (userLogsInPeriod.length === 0) return;
-
-    const logToRemove = userLogsInPeriod[0];
-
-    // Optimistic UI: remove from cache instantly
-    removeOptimisticLog(id, logToRemove.id);
-    if (navigator.vibrate) navigator.vibrate(10);
-    toast.info("Progress adjusted");
+    setProcessingGoalId(goalId);
 
     try {
+        // Find the most recent log for this goal/user/period from the server
+        const logToRemove = await api.getLastLog(goalId, user.id, currentPeriodKey);
+        if (!logToRemove) {
+            setProcessingGoalId(null);
+            return;
+        }
+
+        // Optimistic UI: remove from cache instantly
+        removeOptimisticLog(id, logToRemove.id, logToRemove);
+        if (navigator.vibrate) navigator.vibrate(10);
+        toast.info("Progress adjusted");
+        setProcessingGoalId(null);
+
         // Fire actual DB delete in background
         await api.deleteLog(logToRemove.id);
 
         // Invalidate TTL and refresh in background
         invalidateChallenge(id);
         fetchChallengeDetail(id);
-        fetchLogs(id);
+        fetchStats(id);
     } catch (e: any) {
-        // Rollback: re-add the log on failure
-        addOptimisticLog(id, logToRemove);
+        setProcessingGoalId(null);
         toast.error(e.message || t('error_generic'));
     }
   };
@@ -291,12 +293,12 @@ const ChallengeDetail: React.FC = () => {
       return [...(challenge.participants || [])].sort((a, b) => b.score - a.score);
     }
     return challenge.participants.map(p => {
-      const goalScore = logs
-        .filter(l => l.goalId === selectedLeaderboardGoalId && l.userId === p.userId)
-        .reduce((sum, current) => sum + current.pointsEarned, 0);
+      const goalScore = stats.goalScores
+        .filter(gs => gs.goal_id === selectedLeaderboardGoalId && gs.user_id === p.userId)
+        .reduce((sum, gs) => sum + gs.score, 0);
       return { ...p, score: goalScore };
     }).sort((a, b) => b.score - a.score);
-  }, [challenge, logs, selectedLeaderboardGoalId]);
+  }, [challenge, stats.goalScores, selectedLeaderboardGoalId]);
 
   const goalMeta = useMemo(() => {
     const frequencyByGoalId: Record<string, string> = {};
@@ -318,13 +320,12 @@ const ChallengeDetail: React.FC = () => {
       return { countByGoalId, totalCurrent: 0, totalMax: 0 };
     }
 
-    for (const log of logs) {
-      if (log.userId !== user.id) continue;
-      const frequency = goalMeta.frequencyByGoalId[log.goalId];
-      if (!frequency) continue;
-      const logPeriodKey = getPeriodKey(frequency as any, new Date(log.timestamp));
-      if (logPeriodKey !== goalMeta.periodKeyByGoalId[log.goalId]) continue;
-      countByGoalId[log.goalId] = (countByGoalId[log.goalId] || 0) + 1;
+    // Use pre-aggregated period counts from stats
+    for (const pc of stats.periodCounts) {
+      if (pc.user_id !== user.id) continue;
+      const expectedPeriodKey = goalMeta.periodKeyByGoalId[pc.goal_id];
+      if (!expectedPeriodKey || pc.period_key !== expectedPeriodKey) continue;
+      countByGoalId[pc.goal_id] = (countByGoalId[pc.goal_id] || 0) + pc.count;
     }
 
     let totalCurrent = 0;
@@ -337,7 +338,7 @@ const ChallengeDetail: React.FC = () => {
     }
 
     return { countByGoalId, totalCurrent, totalMax };
-  }, [challenge, logs, user, isNotStarted, goalMeta]);
+  }, [challenge, stats.periodCounts, user, isNotStarted, goalMeta]);
 
   const dailyProgress = useMemo(() => {
     if (!challenge || !user || isNotStarted) return { current: 0, total: 0 };
@@ -351,24 +352,25 @@ const ChallengeDetail: React.FC = () => {
     let cumulativeGroupSum = 0;
     const participantCount = challenge.participants.length || 1;
     const chart = days.map(day => {
-       const dayLogs = logs.filter(l => {
-         const isSameDayLog = isSameDay(new Date(l.timestamp), day);
-         const matchesGoal = selectedProgressGoalId === 'total' || l.goalId === selectedProgressGoalId;
-         return isSameDayLog && matchesGoal;
+       const dayStr = format(day, 'yyyy-MM-dd');
+       const dayEntries = stats.dailyPoints.filter(dp => {
+         const matchesDay = dp.day === dayStr;
+         const matchesGoal = selectedProgressGoalId === 'total' || dp.goal_id === selectedProgressGoalId;
+         return matchesDay && matchesGoal;
        });
-       const myDayPoints = dayLogs.filter(l => l.userId === user?.id).reduce((sum, l) => sum + l.pointsEarned, 0);
-       const totalDayPoints = dayLogs.reduce((sum, l) => sum + l.pointsEarned, 0);
+       const myDayPoints = dayEntries.filter(dp => dp.user_id === user?.id).reduce((sum, dp) => sum + dp.points, 0);
+       const totalDayPoints = dayEntries.reduce((sum, dp) => sum + dp.points, 0);
        const avgDayPoints = totalDayPoints / participantCount;
        cumulativeUser += myDayPoints;
        cumulativeGroupSum += avgDayPoints;
-       return { 
+       return {
          name: format(day, 'EEEEEE', { locale: dateLocale }),
-         'Jouw Punten': cumulativeUser, 
-         'Gemiddelde': Math.round(cumulativeGroupSum) 
+         'Jouw Punten': cumulativeUser,
+         'Gemiddelde': Math.round(cumulativeGroupSum)
        };
     });
     return { chart, userTotal: cumulativeUser, groupAvg: Math.round(cumulativeGroupSum) };
-  }, [logs, challenge, user, dateLocale, selectedProgressGoalId, activeTab]);
+  }, [stats.dailyPoints, challenge, user, dateLocale, selectedProgressGoalId, activeTab]);
 
   if (loadingInitial) return <LoadingScreen />;
   if (!challenge) return <div className="p-8 text-center text-red-500">Challenge not found.</div>;
@@ -499,7 +501,7 @@ const ChallengeDetail: React.FC = () => {
               </button>
             </div>
 
-            {challenge.goals.length > 0 && logs.length === 0 && (
+            {challenge.goals.length > 0 && !statsCache[id!] && (
               <div className="space-y-3 animate-pulse">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
