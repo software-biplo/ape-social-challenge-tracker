@@ -2,9 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useTheme, ThemePreference } from '../context/ThemeContext';
 import { api } from '../services/dataService';
 import Card from '../components/Card';
-import { User, Save, Mail, Lock, LogOut, Globe, Loader2, ArrowLeft } from 'lucide-react';
+import { User, Save, Mail, Lock, LogOut, Globe, Loader2, ArrowLeft, Sun, Moon, Monitor } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Language } from '../services/translations';
@@ -12,6 +13,7 @@ import { Language } from '../services/translations';
 const Profile: React.FC = () => {
   const { user, updatePassword, logout, refreshUser } = useAuth();
   const { t, language, setLanguage } = useLanguage();
+  const { theme, setTheme } = useTheme();
   const [name, setName] = useState(user?.name || '');
   const [selectedLang, setSelectedLang] = useState<Language>(language);
   const [loading, setLoading] = useState(false);
@@ -85,10 +87,10 @@ const Profile: React.FC = () => {
   return (
     <div className="max-w-xl mx-auto space-y-6">
       <div className="flex items-center gap-4 mb-2">
-         <Link to="/" className="p-2 bg-white border border-slate-200 rounded-xl text-slate-500 hover:text-slate-800 transition-colors shadow-sm">
+         <Link to="/" className="p-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors shadow-sm">
             <ArrowLeft size={20} />
          </Link>
-         <h1 className="text-2xl font-black text-slate-900 tracking-tight">{t('settings')}</h1>
+         <h1 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{t('settings')}</h1>
       </div>
       
       {/* Profile Info Card */}
@@ -99,47 +101,47 @@ const Profile: React.FC = () => {
                     <img 
                         src={defaultAvatar} 
                         alt="Profile" 
-                        className="w-24 h-24 rounded-full bg-slate-50 border-4 border-white shadow-md object-cover" 
+                        className="w-24 h-24 rounded-full bg-slate-50 dark:bg-slate-700 border-4 border-white dark:border-slate-600 shadow-md object-cover" 
                     />
                 </div>
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{t('full_name')}</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('full_name')}</label>
                 <div className="relative">
                     <User className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
                     <input 
                         type="text" 
                         value={name}
                         onChange={e => setName(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white text-slate-900 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-slate-400 text-base"
+                        className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-base"
                         placeholder="Your Name"
                     />
                 </div>
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{t('email')}</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('email')}</label>
                 <div className="relative">
                     <Mail className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
                     <input 
                         type="text" 
                         value={user?.email}
                         disabled
-                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed text-base"
+                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 cursor-not-allowed text-base"
                     />
                 </div>
             </div>
 
             {/* Language Selection */}
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{t('preferred_language')}</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('preferred_language')}</label>
                 <div className="relative">
                     <Globe className="absolute left-3 top-3 text-slate-400 w-5 h-5 pointer-events-none" />
                     <select 
                         value={selectedLang}
                         onChange={(e) => setSelectedLang(e.target.value as Language)}
-                        className="w-full pl-10 pr-4 py-3 bg-white text-slate-900 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none appearance-none text-base"
+                        className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-brand-500 outline-none appearance-none text-base"
                     >
                         <option value="nl">Nederlands</option>
                         <option value="en">English</option>
@@ -151,10 +153,36 @@ const Profile: React.FC = () => {
                 </div>
             </div>
 
-            <button 
-                type="submit" 
+            {/* Appearance / Theme Selection */}
+            <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('appearance')}</label>
+                <div className="flex gap-2">
+                    {([
+                        { value: 'light' as ThemePreference, icon: Sun, label: t('theme_light') },
+                        { value: 'dark' as ThemePreference, icon: Moon, label: t('theme_dark') },
+                        { value: 'system' as ThemePreference, icon: Monitor, label: t('theme_system') },
+                    ]).map(({ value, icon: Icon, label }) => (
+                        <button
+                            key={value}
+                            type="button"
+                            onClick={() => setTheme(value)}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all text-base font-medium ${
+                                theme === value
+                                    ? 'border-brand-500 bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-400'
+                                    : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500'
+                            }`}
+                        >
+                            <Icon size={18} />
+                            {label}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <button
+                type="submit"
                 disabled={loading}
-                className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-base"
+                className="w-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 font-bold py-3 rounded-xl hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-base"
             >
                 {loading ? <Loader2 className="animate-spin" size={18} /> : <><Save size={18} /> {t('save')}</>}
             </button>
@@ -163,30 +191,30 @@ const Profile: React.FC = () => {
 
       {/* Security Card */}
       <Card>
-        <h2 className="text-lg font-bold text-slate-900 mb-4">{t('security')}</h2>
+        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">{t('security')}</h2>
         <form onSubmit={handlePasswordUpdate} className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{t('new_password')}</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('new_password')}</label>
                 <div className="relative">
                     <Lock className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
                     <input 
                         type="password" 
                         value={newPassword}
                         onChange={e => setNewPassword(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white text-slate-900 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-slate-400 text-base"
+                        className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-base"
                         placeholder="Min. 6 characters"
                     />
                 </div>
             </div>
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{t('confirm_password')}</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">{t('confirm_password')}</label>
                 <div className="relative">
                     <Lock className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
                     <input 
                         type="password" 
                         value={confirmPassword}
                         onChange={e => setConfirmPassword(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white text-slate-900 rounded-xl border border-slate-200 focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-slate-400 text-base"
+                        className="w-full pl-10 pr-4 py-3 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-xl border border-slate-200 dark:border-slate-600 focus:ring-2 focus:ring-brand-500 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 text-base"
                         placeholder="..."
                     />
                 </div>
@@ -195,7 +223,7 @@ const Profile: React.FC = () => {
             <button 
                 type="submit" 
                 disabled={loadingPassword || !newPassword}
-                className="w-full bg-white border border-slate-200 text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-base"
+                className="w-full bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-base"
             >
                 {loadingPassword ? <Loader2 className="animate-spin" size={18} /> : t('update_password')}
             </button>
@@ -206,12 +234,12 @@ const Profile: React.FC = () => {
       <div className="pt-4 md:hidden">
          <button 
             onClick={logout}
-            className="w-full bg-red-50 text-red-600 font-bold py-3 rounded-xl hover:bg-red-100 transition-colors flex items-center justify-center gap-2 text-base"
+            className="w-full bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 font-bold py-3 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors flex items-center justify-center gap-2 text-base"
          >
             <LogOut size={20} />
             {t('sign_out')}
          </button>
-         <p className="text-center text-xs text-slate-400 mt-4">Version 1.0.0</p>
+         <p className="text-center text-xs text-slate-400 dark:text-slate-500 mt-4">Version 1.0.0</p>
       </div>
     </div>
   );

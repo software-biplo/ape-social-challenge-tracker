@@ -1,0 +1,17 @@
+{
+  "short_name": "APE",
+  "name": "APE - Social Challenge Tracker",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#f97316",
+  "background_color": "#ffffff",
+  "orientation": "portrait"
+}

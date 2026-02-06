@@ -127,7 +127,11 @@ export const translations = {
     update_password: "Wachtwoord bijwerken",
     tap_change: "Tik om foto te wijzigen",
     preferred_language: "Voorkeurstaal",
-    
+    appearance: "Weergave",
+    theme_light: "Licht",
+    theme_dark: "Donker",
+    theme_system: "Auto",
+
     // Toasts
     success_join: "Succesvol deelgenomen!",
     success_create: "Uitdaging aangemaakt!",
@@ -261,6 +265,10 @@ export const translations = {
     update_password: "Update Password",
     tap_change: "Tap to change profile picture",
     preferred_language: "Preferred Language",
+    appearance: "Appearance",
+    theme_light: "Light",
+    theme_dark: "Dark",
+    theme_system: "Auto",
 
     // Toasts
     success_join: "Successfully joined challenge!",
@@ -395,6 +403,10 @@ export const translations = {
     update_password: "Mettre à jour le mot de passe",
     tap_change: "Appuyez pour changer la photo",
     preferred_language: "Langue préférée",
+    appearance: "Apparence",
+    theme_light: "Clair",
+    theme_dark: "Sombre",
+    theme_system: "Auto",
 
     // Toasts
     success_join: "Défi rejoint avec succès !",

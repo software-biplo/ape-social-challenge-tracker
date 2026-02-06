@@ -11,7 +11,7 @@ const Card: React.FC<CardProps> = ({ children, className = '', onClick, padding 
   return (
     <div 
       onClick={onClick}
-      className={`bg-white rounded-2xl border border-slate-100 shadow-sm transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-brand-200' : ''} ${padding} ${className}`}
+      className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm dark:shadow-slate-900/50 transition-all duration-200 ${onClick ? 'cursor-pointer hover:shadow-md hover:border-brand-200 dark:hover:border-brand-600' : ''} ${padding} ${className}`}
     >
       {children}
     </div>
