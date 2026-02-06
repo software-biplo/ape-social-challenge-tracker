@@ -333,8 +333,12 @@ const ChallengeDetail: React.FC = () => {
     for (const goal of challenge.goals) {
       const goalMax = goalMeta.maxByGoalId[goal.id] || 1;
       const count = countByGoalId[goal.id] || 0;
-      totalCurrent += Math.min(count, goalMax);
-      totalMax += goalMax;
+      // All goals (including penalties) contribute to current score
+      totalCurrent += Math.min(count, goalMax) * goal.points;
+      // Only positive goals count toward max achievable
+      if (goal.points > 0) {
+        totalMax += goalMax * goal.points;
+      }
     }
 
     return { countByGoalId, totalCurrent, totalMax };
@@ -435,13 +439,13 @@ const ChallengeDetail: React.FC = () => {
                 {language === 'nl' ? 'Dagscore' : 'Daily score'}
               </span>
               <span className="text-xs font-black text-slate-700">
-                {dailyProgress.total ? Math.min(100, Math.round((dailyProgress.current / dailyProgress.total) * 100)) : 0}%
+                {dailyProgress.total ? Math.max(0, Math.min(100, Math.round((dailyProgress.current / dailyProgress.total) * 100))) : 0}%
               </span>
            </div>
            <div className="h-3 bg-slate-100 rounded-full overflow-hidden relative">
-              <div 
-                  className={`h-full bg-gradient-to-r from-brand-500 via-orange-400 to-rose-400 rounded-full transition-all duration-700 ease-out ${isNotStarted ? 'opacity-30' : ''}`} 
-                  style={{ width: `${dailyProgress.total ? Math.min(100, (dailyProgress.current / dailyProgress.total) * 100) : 0}%` }} 
+              <div
+                  className={`h-full bg-gradient-to-r from-brand-500 via-orange-400 to-rose-400 rounded-full transition-all duration-700 ease-out ${isNotStarted ? 'opacity-30' : ''}`}
+                  style={{ width: `${dailyProgress.total ? Math.max(0, Math.min(100, (dailyProgress.current / dailyProgress.total) * 100)) : 0}%` }}
               />
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_50%,rgba(255,255,255,0.35),transparent_60%)] opacity-60" />
            </div>
