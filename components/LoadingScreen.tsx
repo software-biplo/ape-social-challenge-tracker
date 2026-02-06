@@ -6,7 +6,7 @@ const LoadingScreen: React.FC = () => {
   const { t } = useLanguage();
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-50 flex flex-col items-center justify-center p-6">
+    <div className="fixed inset-0 z-[100] bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6">
       <style>
         {`
           @keyframes monkeyRun {
@@ -27,33 +27,34 @@ const LoadingScreen: React.FC = () => {
           .speed-line {
             position: absolute;
             height: 3px;
-            background: #cbd5e1;
             border-radius: 99px;
             animation: groundMove 0.8s infinite linear;
           }
+          :root .speed-line { background: #cbd5e1; }
+          .dark .speed-line { background: #475569; }
         `}
       </style>
-      
+
       <div className="relative mb-8 w-32 h-32 flex items-center justify-center">
         {/* Speed lines for "running" effect */}
         <div className="speed-line w-12 top-1/4 -right-8" style={{ animationDelay: '0s' }}></div>
         <div className="speed-line w-8 top-1/2 -right-12" style={{ animationDelay: '0.2s' }}></div>
         <div className="speed-line w-10 bottom-1/4 -right-10" style={{ animationDelay: '0.4s' }}></div>
-        
+
         {/* The Monkey */}
         <div className="text-7xl animate-monkey select-none drop-shadow-xl">
           🦍
         </div>
-        
+
         {/* Ground shadow/dust */}
-        <div className="absolute -bottom-2 w-16 h-2 bg-slate-200 rounded-[100%] blur-[2px] opacity-60"></div>
+        <div className="absolute -bottom-2 w-16 h-2 bg-slate-200 dark:bg-slate-700 rounded-[100%] blur-[2px] opacity-60"></div>
       </div>
-      
+
       <div className="text-center">
-        <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter mb-2">
+        <h3 className="text-xl font-black text-slate-800 dark:text-slate-200 uppercase tracking-tighter mb-2">
           {t('loading')}
         </h3>
-        <p className="text-slate-500 font-medium animate-pulse">
+        <p className="text-slate-500 dark:text-slate-400 font-medium animate-pulse">
           Swinging into action...
         </p>
       </div>

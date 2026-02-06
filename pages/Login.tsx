@@ -27,7 +27,7 @@ const Login: React.FC = () => {
            }
       }
   }, [t]);
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isLogin) {
@@ -47,14 +47,14 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-3xl shadow-xl p-8 border border-slate-100">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white dark:bg-slate-800 rounded-3xl shadow-xl dark:shadow-slate-900/50 p-8 border border-slate-100 dark:border-slate-700">
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="w-20 h-20 bg-brand-500 rounded-3xl flex items-center justify-center mb-4 shadow-lg shadow-brand-500/20 text-4xl">
             🦍
           </div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">APE</h1>
-          <p className="text-slate-500 mt-2 font-medium">
+          <h1 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tighter uppercase">APE</h1>
+          <p className="text-slate-500 dark:text-slate-400 mt-2 font-medium">
             Social Challenge Tracker
           </p>
         </div>
@@ -62,7 +62,7 @@ const Login: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="name">{t('full_name')}</label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" htmlFor="name">{t('full_name')}</label>
                 <div className="relative">
                 <User className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
                 <input
@@ -72,7 +72,7 @@ const Login: React.FC = () => {
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition-all text-base"
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900/50 outline-none transition-all text-base placeholder:text-slate-400 dark:placeholder:text-slate-500"
                     placeholder="Alex Johnson"
                     required
                 />
@@ -80,7 +80,7 @@ const Login: React.FC = () => {
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="email">{t('email')}</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" htmlFor="email">{t('email')}</label>
             <div className="relative">
               <Mail className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
               <input
@@ -90,14 +90,14 @@ const Login: React.FC = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition-all text-base"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900/50 outline-none transition-all text-base placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 placeholder="you@example.com"
                 required
               />
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="password">{t('password')}</label>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" htmlFor="password">{t('password')}</label>
             <div className="relative">
               <Lock className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
               <input
@@ -107,16 +107,16 @@ const Login: React.FC = () => {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition-all text-base"
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900/50 outline-none transition-all text-base placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 placeholder="••••••••"
                 required
               />
             </div>
           </div>
-          
+
           {!isLogin && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="confirmPassword">{t('confirm_password')}</label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1" htmlFor="confirmPassword">{t('confirm_password')}</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
                 <input
@@ -126,7 +126,7 @@ const Login: React.FC = () => {
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 outline-none transition-all text-base"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:border-brand-500 focus:ring-2 focus:ring-brand-100 dark:focus:ring-brand-900/50 outline-none transition-all text-base placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   placeholder="••••••••"
                   required
                 />
@@ -152,7 +152,7 @@ const Login: React.FC = () => {
                 setConfirmPassword('');
                 setPassword('');
             }}
-            className="text-sm text-slate-500 hover:text-brand-600 font-medium transition-colors"
+            className="text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 font-medium transition-colors"
           >
             {isLogin ? `${t('signup')}?` : `${t('login')}?`}
           </button>

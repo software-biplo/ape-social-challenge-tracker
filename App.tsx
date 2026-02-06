@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 import { ChallengeProvider } from './context/ChallengeContext';
 import Layout from './components/Layout';
 import LoadingScreen from './components/LoadingScreen';
@@ -119,20 +120,25 @@ const AppRoutes = () => {
   );
 };
 
+const ThemedToaster = () => {
+  const { resolvedTheme } = useTheme();
+  return <Toaster position="top-center" richColors theme={resolvedTheme} />;
+};
+
 const App: React.FC = () => {
   return (
-    <LanguageProvider>
-      <AuthProvider>
-        <ChallengeProvider>
-          <HashRouter>
-            <AppRoutes />
-          </HashRouter>
-          <Toaster position="top-center" richColors />
-          <SpeedInsights />
-          <Analytics />
-        </ChallengeProvider>
-      </AuthProvider>
-    </LanguageProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <ChallengeProvider>
+            <HashRouter>
+              <AppRoutes />
+            </HashRouter>
+            <ThemedToaster />
+          </ChallengeProvider>
+        </AuthProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   );
 };
 

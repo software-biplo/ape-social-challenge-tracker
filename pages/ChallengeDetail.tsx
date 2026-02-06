@@ -7,6 +7,7 @@ import { getIcon } from '../services/iconService';
 import { useAuth } from '../context/AuthContext';
 import { useChallenges } from '../context/ChallengeContext';
 import { useLanguage } from '../context/LanguageContext';
+import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import LoadingScreen from '../components/LoadingScreen';
@@ -21,8 +22,9 @@ const ChallengeDetail: React.FC = () => {
   const { user } = useAuth();
   const { challengeCache, statsCache, fetchChallengeDetail, fetchStats, refreshChallenges, invalidateChallenge, addOptimisticLog, removeOptimisticLog } = useChallenges();
   const { t, dateLocale, language } = useLanguage();
+  const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
-  
+
   // Deriving data directly from Context Cache for reactivity
   const challenge = id ? challengeCache[id] : undefined;
   const stats: ChallengeStats = id ? (statsCache[id] || { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] }) : { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] };
@@ -376,29 +378,43 @@ const ChallengeDetail: React.FC = () => {
     return { chart, userTotal: cumulativeUser, groupAvg: Math.round(cumulativeGroupSum) };
   }, [stats.dailyPoints, challenge, user, dateLocale, selectedProgressGoalId, activeTab]);
 
+  // Recharts theme-aware colors
+  const chartGridStroke = resolvedTheme === 'dark' ? '#334155' : '#f1f5f9';
+  const chartAxisStroke = resolvedTheme === 'dark' ? '#64748b' : '#94a3b8';
+  const chartTooltipStyle = {
+    borderRadius: '16px',
+    border: 'none',
+    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+    padding: '12px',
+    backgroundColor: resolvedTheme === 'dark' ? '#1e293b' : '#fff',
+    borderColor: resolvedTheme === 'dark' ? '#475569' : '#e2e8f0',
+    color: resolvedTheme === 'dark' ? '#e2e8f0' : '#0f172a',
+  };
+  const chartAvgLineStroke = resolvedTheme === 'dark' ? '#475569' : '#cbd5e1';
+
   if (loadingInitial) return <LoadingScreen />;
-  if (!challenge) return <div className="p-8 text-center text-red-500">Challenge not found.</div>;
+  if (!challenge) return <div className="p-8 text-center text-red-500 dark:text-red-400">Challenge not found.</div>;
 
   const isOwner = user?.id === challenge.creatorId;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between mb-2 px-4 md:px-0">
-         <Link to="/" className="flex items-center gap-2 text-slate-500 hover:text-slate-800 font-medium">
+         <Link to="/" className="flex items-center gap-2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium">
             <ArrowLeft size={20} /> {t('back')}
          </Link>
          <div className="flex gap-2">
             {isOwner && (
-                <Link to={`/challenge/${challenge.id}/edit`} className="p-2 text-slate-400 hover:text-slate-700 bg-white rounded-lg border border-slate-200 shadow-sm">
+                <Link to={`/challenge/${challenge.id}/edit`} className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm">
                     <Settings size={20} />
                 </Link>
             )}
             {isOwner ? (
-                <button onClick={() => { setDeleteConfirmText(''); setIsDeleteModalOpen(true); }} className="p-2 text-red-500 hover:bg-red-50 bg-white rounded-lg border border-slate-200 shadow-sm transition-colors" title={t('delete_challenge')}>
+                <button onClick={() => { setDeleteConfirmText(''); setIsDeleteModalOpen(true); }} className="p-2 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm transition-colors" title={t('delete_challenge')}>
                     <Trash2 size={20} />
                 </button>
             ) : (
-                <button onClick={handleLeave} className="p-2 text-slate-500 hover:text-red-600 bg-white rounded-lg border border-slate-200 shadow-sm transition-colors" title={t('leave_challenge')}>
+                <button onClick={handleLeave} className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-600 shadow-sm transition-colors" title={t('leave_challenge')}>
                     <LogOut size={20} />
                 </button>
             )}
@@ -407,7 +423,7 @@ const ChallengeDetail: React.FC = () => {
 
       <div className="flex flex-col gap-1 px-4 md:px-0">
           <div className="flex items-start gap-3">
-             <h1 className="text-3xl font-bold text-slate-900 leading-tight tracking-tight">{challenge.name}</h1>
+             <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 leading-tight tracking-tight">{challenge.name}</h1>
              {isOwner && (
                 <span className="mt-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 text-[10px] font-bold border border-brand-200 uppercase tracking-tighter shrink-0">
                    <ShieldCheck size={10} /> {t('host')}
@@ -415,34 +431,34 @@ const ChallengeDetail: React.FC = () => {
              )}
           </div>
           {isNotStarted && (
-             <div className="inline-flex items-center gap-2 text-orange-600 font-bold text-sm bg-orange-50 px-3 py-1 rounded-lg w-fit mt-1">
+             <div className="inline-flex items-center gap-2 text-orange-600 dark:text-orange-400 font-bold text-sm bg-orange-50 dark:bg-orange-900/30 px-3 py-1 rounded-lg w-fit mt-1">
                 <Lock size={14} /> {t('starts_on')} {format(parseISO(challenge.startDate), 'd MMMM', { locale: dateLocale })}
              </div>
           )}
       </div>
 
       <div className="px-4 md:px-0 sticky top-0 z-30">
-        <div className="bg-white/90 backdrop-blur-md rounded-2xl border border-slate-100 shadow-sm p-4">
+        <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur-md rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm p-4">
            <div className="flex justify-between items-end mb-2">
-              <span className="text-sm font-bold text-slate-600 tracking-tight">
+              <span className="text-sm font-bold text-slate-600 dark:text-slate-300 tracking-tight">
                 {isToday ? t('daily_progress') : format(selectedDate, 'd MMM', { locale: dateLocale })}
               </span>
               <div className="flex items-baseline gap-2">
                 <span className="text-sm font-black text-brand-600">
                   {dailyProgress.current} {language === 'nl' ? 'van' : 'of'} {dailyProgress.total}
                 </span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">100% max</span>
+                <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">100% max</span>
               </div>
            </div>
            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
                 {language === 'nl' ? 'Dagscore' : 'Daily score'}
               </span>
-              <span className="text-xs font-black text-slate-700">
+              <span className="text-xs font-black text-slate-700 dark:text-slate-300">
                 {dailyProgress.total ? Math.max(0, Math.min(100, Math.round((dailyProgress.current / dailyProgress.total) * 100))) : 0}%
               </span>
            </div>
-           <div className="h-3 bg-slate-100 rounded-full overflow-hidden relative">
+           <div className="h-3 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden relative">
               <div
                   className={`h-full bg-gradient-to-r from-brand-500 via-orange-400 to-rose-400 rounded-full transition-all duration-700 ease-out ${isNotStarted ? 'opacity-30' : ''}`}
                   style={{ width: `${dailyProgress.total ? Math.max(0, Math.min(100, (dailyProgress.current / dailyProgress.total) * 100)) : 0}%` }}
@@ -453,17 +469,17 @@ const ChallengeDetail: React.FC = () => {
       </div>
 
       {/* Adjusted Tab Bar: Font size reduced to text-[10px] for mobile to ensure fitting 4 columns */}
-      <div className="grid grid-cols-4 border-b border-slate-200 px-4 md:px-0">
+      <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-600 px-4 md:px-0">
         {[
           { id: 'goals', label: t('my_goals') },
           { id: 'leaderboard', label: t('leaderboard') },
           { id: 'progress', label: t('progress') },
           { id: 'chat', label: t('chat') },
         ].map(tab => (
-          <button 
-            key={tab.id} 
-            onClick={() => setActiveTab(tab.id as any)} 
-            className={`py-3 px-0 text-[10px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 hover:text-slate-800'}`}
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            className={`py-3 px-0 text-[10px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
           >
             {tab.label}
             {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-brand-500 rounded-t-full" />}
@@ -475,11 +491,11 @@ const ChallengeDetail: React.FC = () => {
         {activeTab === 'goals' && (
           <div className="space-y-4">
             {/* Date Navigator */}
-            <div className="flex items-center justify-between bg-white rounded-2xl border border-slate-100 shadow-sm px-4 py-3">
+            <div className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm px-4 py-3">
               <button
                 onClick={() => canGoBack && setSelectedDate(prev => startOfDay(subDays(prev, 1)))}
                 disabled={!canGoBack}
-                className="p-2 rounded-xl hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronLeft size={20} />
               </button>
@@ -487,7 +503,7 @@ const ChallengeDetail: React.FC = () => {
                 onClick={() => setSelectedDate(startOfDay(new Date()))}
                 className="flex flex-col items-center gap-0.5 min-w-[140px]"
               >
-                <span className="text-sm font-black text-slate-900 tracking-tight">
+                <span className="text-sm font-black text-slate-900 dark:text-slate-100 tracking-tight">
                   {isToday ? (language === 'nl' ? 'Vandaag' : 'Today') : format(selectedDate, 'd MMMM', { locale: dateLocale })}
                 </span>
                 {!isToday && (
@@ -499,7 +515,7 @@ const ChallengeDetail: React.FC = () => {
               <button
                 onClick={() => !isToday && !isFutureDate && setSelectedDate(prev => startOfDay(addDays(prev, 1)))}
                 disabled={isToday || isFutureDate}
-                className="p-2 rounded-xl hover:bg-slate-50 text-slate-500 hover:text-slate-800 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                className="p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 <ChevronRight size={20} />
               </button>
@@ -508,18 +524,18 @@ const ChallengeDetail: React.FC = () => {
             {challenge.goals.length > 0 && !statsCache[id!] && (
               <div className="space-y-3 animate-pulse">
                 {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+                  <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-100" />
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-700" />
                         <div className="flex flex-col gap-2 flex-1">
-                          <div className="h-4 w-2/3 bg-slate-100 rounded" />
-                          <div className="h-3 w-1/2 bg-slate-100 rounded" />
+                          <div className="h-4 w-2/3 bg-slate-100 dark:bg-slate-700 rounded" />
+                          <div className="h-3 w-1/2 bg-slate-100 dark:bg-slate-700 rounded" />
                         </div>
                       </div>
                       <div className="flex items-center gap-2 ml-4">
-                        <div className="w-10 h-10 rounded-xl bg-slate-100" />
-                        <div className="w-12 h-12 rounded-xl bg-slate-100" />
+                        <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700" />
+                        <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-700" />
                       </div>
                     </div>
                   </div>
@@ -535,27 +551,27 @@ const ChallengeDetail: React.FC = () => {
               const isPenalty = goal.points < 0;
 
               return (
-                <div key={goal.id} className={`bg-white rounded-2xl border border-slate-100 p-5 shadow-sm transition-all ${isNotStarted ? 'opacity-80 grayscale' : 'hover:shadow-md'}`}>
+                <div key={goal.id} className={`bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm transition-all ${isNotStarted ? 'opacity-80 grayscale' : 'hover:shadow-md'}`}>
                   <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${isCompleted ? (isPenalty ? 'bg-rose-100 text-rose-600' : 'bg-green-100 text-green-600') : (isPenalty ? 'bg-rose-50 text-rose-500' : 'bg-brand-50 text-brand-500')}`}>
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-sm ${isCompleted ? (isPenalty ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400' : 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400') : (isPenalty ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-500 dark:text-rose-400' : 'bg-brand-50 dark:bg-brand-900/30 text-brand-500')}`}>
                            <GoalIcon size={24} strokeWidth={2.5} />
                         </div>
                         <div className="flex flex-col min-w-0">
                             {/* Restored truncate for Goal Title to prevent card expansion */}
                             <div className="flex items-center gap-2 min-w-0">
-                              <h3 className="font-bold text-slate-900 text-lg leading-tight truncate tracking-tight">{goal.title}</h3>
+                              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg leading-tight truncate tracking-tight">{goal.title}</h3>
                               {goal.description && (
                                 <div className="relative group">
-                                  <button 
+                                  <button
                                     type="button"
                                     aria-label={language === 'nl' ? 'Toelichting' : 'Description'}
-                                    className="p-1 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                                    className="p-1 rounded-full text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                                   >
                                     <Info size={14} />
                                   </button>
                                   <div className="absolute left-1/2 top-full z-20 hidden w-56 -translate-x-1/2 pt-2 group-hover:block group-focus-within:block">
-                                    <div className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-medium text-slate-700 shadow-lg">
+                                    <div className="rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-3 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-lg">
                                       {goal.description}
                                     </div>
                                   </div>
@@ -563,8 +579,8 @@ const ChallengeDetail: React.FC = () => {
                               )}
                             </div>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1.5 py-0.5 bg-slate-50 rounded border border-slate-100">{t(goal.frequency as any)}</span>
-                                <span className={`text-xs font-bold ${isPenalty ? 'text-rose-500' : 'text-brand-600'}`}>
+                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1.5 py-0.5 bg-slate-50 dark:bg-slate-950 rounded border border-slate-100 dark:border-slate-700">{t(goal.frequency as any)}</span>
+                                <span className={`text-xs font-bold ${isPenalty ? 'text-rose-500 dark:text-rose-400' : 'text-brand-600'}`}>
                                     {goal.points >= 0 ? '+' : ''}{goal.points} pts • {completionsInPeriod}/{goal.maxCompletions || 1}
                                 </span>
                             </div>
@@ -572,29 +588,29 @@ const ChallengeDetail: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         {completionsInPeriod > 0 && !isNotStarted && (
-                           <button disabled={isProcessing} onClick={() => handleReduceGoal(goal.id)} className="w-10 h-10 rounded-xl border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 transition-all bg-white active:scale-90">
+                           <button disabled={isProcessing} onClick={() => handleReduceGoal(goal.id)} className="w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800 transition-all bg-white dark:bg-slate-800 active:scale-90">
                               {isProcessing ? <Loader2 size={16} className="animate-spin" /> : <Minus size={18} />}
                            </button>
                         )}
-                        <button 
-                            disabled={isCompleted || isProcessing} 
-                            onClick={() => handleLogGoal(goal)} 
+                        <button
+                            disabled={isCompleted || isProcessing}
+                            onClick={() => handleLogGoal(goal)}
                             className={`w-12 h-12 rounded-xl border-2 flex items-center justify-center transition-all shadow-sm active:scale-95 ${
-                                isCompleted 
-                                    ? (isPenalty ? 'bg-rose-500 border-rose-500 text-white' : 'bg-green-500 border-green-500 text-white') 
-                                    : isNotStarted 
-                                        ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed' 
-                                        : isPenalty 
-                                            ? 'border-slate-200 hover:border-rose-300 bg-white text-transparent hover:text-rose-300'
-                                            : 'border-slate-200 hover:border-brand-300 bg-white text-transparent hover:text-brand-300'
+                                isCompleted
+                                    ? (isPenalty ? 'bg-rose-500 border-rose-500 text-white' : 'bg-green-500 border-green-500 text-white')
+                                    : isNotStarted
+                                        ? 'border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-300 dark:text-slate-600 cursor-not-allowed'
+                                        : isPenalty
+                                            ? 'border-slate-200 dark:border-slate-600 hover:border-rose-300 dark:hover:border-rose-700 bg-white dark:bg-slate-800 text-transparent hover:text-rose-300 dark:hover:text-rose-400'
+                                            : 'border-slate-200 dark:border-slate-600 hover:border-brand-300 dark:hover:border-brand-700 bg-white dark:bg-slate-800 text-transparent hover:text-brand-300'
                             }`}
                         >
-                           {isProcessing ? <Loader2 size={24} className="animate-spin" /> : (isNotStarted ? <Lock size={18} /> : (isCompleted ? <Check size={24} strokeWidth={3} /> : <Check size={24} className="text-slate-100" />))}
+                           {isProcessing ? <Loader2 size={24} className="animate-spin" /> : (isNotStarted ? <Lock size={18} /> : (isCompleted ? <Check size={24} strokeWidth={3} /> : <Check size={24} className="text-slate-100 dark:text-slate-700" />))}
                         </button>
                       </div>
                   </div>
                   {isCompleted && (
-                      <div className={`mt-4 border rounded-xl py-2 px-3 flex items-center gap-2 text-xs font-bold animate-fadeIn ${isPenalty ? 'bg-rose-50/50 border-rose-100/50 text-rose-700' : 'bg-green-50/50 border-green-100/50 text-green-700'}`}>
+                      <div className={`mt-4 border rounded-xl py-2 px-3 flex items-center gap-2 text-xs font-bold animate-fadeIn ${isPenalty ? 'bg-rose-50/50 dark:bg-rose-900/20 border-rose-100/50 dark:border-rose-800/50 text-rose-700 dark:text-rose-400' : 'bg-green-50/50 dark:bg-green-900/20 border-green-100/50 dark:border-green-800/50 text-green-700 dark:text-green-400'}`}>
                           {isPenalty ? <AlertTriangle size={14} /> : <CheckCircle size={14} />}
                           <span>{isPenalty ? 'Limit reached for this habit.' : t('completed_today')}</span>
                       </div>
@@ -607,25 +623,25 @@ const ChallengeDetail: React.FC = () => {
         {activeTab === 'leaderboard' && (
           <div className="animate-fadeIn space-y-6">
             <div className="relative">
-              <select value={selectedLeaderboardGoalId} onChange={(e) => setSelectedLeaderboardGoalId(e.target.value)} className="w-full pl-4 pr-10 py-4 bg-white border border-slate-200 rounded-2xl text-base font-black text-slate-900 outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none shadow-sm transition-all">
+              <select value={selectedLeaderboardGoalId} onChange={(e) => setSelectedLeaderboardGoalId(e.target.value)} className="w-full pl-4 pr-10 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-2xl text-base font-black text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none shadow-sm transition-all">
                 <option value="total">{language === 'nl' ? 'Totaal Klassement' : 'Overall Standing'}</option>
                 {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
               </select>
-              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" size={20} />
             </div>
             <div className="space-y-3">
               {currentLeaderboard.map((participant, index) => (
-                <div key={participant.userId} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${participant.userId === user?.id ? 'bg-brand-50 border-brand-200 ring-1 ring-brand-500/10' : 'bg-white border-slate-100 shadow-sm'}`}>
+                <div key={participant.userId} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${participant.userId === user?.id ? 'bg-brand-50 dark:bg-brand-900/30 border-brand-200 dark:border-brand-700 ring-1 ring-brand-500/10' : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 shadow-sm'}`}>
                   <div className="flex items-center gap-4">
-                    <div className={`w-8 h-8 flex items-center justify-center font-black rounded-lg text-xs shadow-sm ${index === 0 ? 'bg-yellow-400 text-white' : index === 1 ? 'bg-slate-300 text-white' : index === 2 ? 'bg-orange-400 text-white' : 'text-slate-400 bg-slate-50 border border-slate-100'}`}>
+                    <div className={`w-8 h-8 flex items-center justify-center font-black rounded-lg text-xs shadow-sm ${index === 0 ? 'bg-yellow-400 text-white' : index === 1 ? 'bg-slate-300 dark:bg-slate-500 text-white' : index === 2 ? 'bg-orange-400 text-white' : 'text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-700'}`}>
                       {index + 1}
                     </div>
-                    <img src={participant.avatar} alt={participant.name} className="w-10 h-10 rounded-full bg-slate-200 object-cover shadow-sm border-2 border-white" />
-                    <span className={`font-bold truncate max-w-[150px] md:max-w-none tracking-tight ${participant.userId === user?.id ? 'text-brand-900' : 'text-slate-900'}`}>{participant.name}</span>
+                    <img src={participant.avatar} alt={participant.name} className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 object-cover shadow-sm border-2 border-white dark:border-slate-700" />
+                    <span className={`font-bold truncate max-w-[150px] md:max-w-none tracking-tight ${participant.userId === user?.id ? 'text-brand-900 dark:text-brand-300' : 'text-slate-900 dark:text-slate-100'}`}>{participant.name}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`font-mono font-black text-2xl tracking-tighter ${participant.score < 0 ? 'text-rose-500' : 'text-slate-800'}`}>{participant.score}</span>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest pt-1">pts</span>
+                    <span className={`font-mono font-black text-2xl tracking-tighter ${participant.score < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>{participant.score}</span>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest pt-1">pts</span>
                   </div>
                 </div>
               ))}
@@ -636,48 +652,48 @@ const ChallengeDetail: React.FC = () => {
           <div className="animate-fadeIn space-y-8">
             <div className="space-y-4">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h2 className="text-xl font-black text-slate-900 tracking-tight">{selectedProgressGoalId === 'total' ? t('progress') : challenge.goals.find(g => g.id === selectedProgressGoalId)?.title}</h2>
+                <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight">{selectedProgressGoalId === 'total' ? t('progress') : challenge.goals.find(g => g.id === selectedProgressGoalId)?.title}</h2>
                 <div className="relative min-w-[200px]">
-                  <select value={selectedProgressGoalId} onChange={(e) => setSelectedProgressGoalId(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none shadow-sm appearance-none">
+                  <select value={selectedProgressGoalId} onChange={(e) => setSelectedProgressGoalId(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 outline-none shadow-sm appearance-none">
                     <option value="total">Alle Doelen</option>
                     {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
                   </select>
-                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" size={16} />
                 </div>
               </div>
-              <div className="bg-white rounded-3xl border border-slate-100 p-6 shadow-sm overflow-hidden">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 p-6 shadow-sm overflow-hidden">
                 <div className="h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={progressData.chart} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={10} tickMargin={10} stroke="#94a3b8" fontWeight="bold" />
-                      <YAxis axisLine={false} tickLine={false} fontSize={10} stroke="#94a3b8" fontWeight="bold" />
-                      <Tooltip cursor={{ stroke: '#f97316', strokeWidth: 1, strokeDasharray: '4 4' }} contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', padding: '12px' }} />
-                      <Legend verticalAlign="bottom" align="center" iconType="circle" formatter={(value) => <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-1">{value}</span>} />
-                      <Line type="monotone" dataKey="Gemiddelde" stroke="#cbd5e1" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 0 }} activeDot={{ r: 4 }} />
-                      <Line type="monotone" dataKey="Jouw Punten" stroke="#f97316" strokeWidth={4} dot={{ r: 4, fill: '#f97316', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 6 }} />
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartGridStroke} />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={10} tickMargin={10} stroke={chartAxisStroke} fontWeight="bold" />
+                      <YAxis axisLine={false} tickLine={false} fontSize={10} stroke={chartAxisStroke} fontWeight="bold" />
+                      <Tooltip cursor={{ stroke: '#f97316', strokeWidth: 1, strokeDasharray: '4 4' }} contentStyle={chartTooltipStyle} />
+                      <Legend verticalAlign="bottom" align="center" iconType="circle" formatter={(value) => <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest px-1">{value}</span>} />
+                      <Line type="monotone" dataKey="Gemiddelde" stroke={chartAvgLineStroke} strokeWidth={2} strokeDasharray="5 5" dot={{ r: 0 }} activeDot={{ r: 4 }} />
+                      <Line type="monotone" dataKey="Jouw Punten" stroke="#f97316" strokeWidth={4} dot={{ r: 4, fill: '#f97316', strokeWidth: 2, stroke: resolvedTheme === 'dark' ? '#1e293b' : '#fff' }} activeDot={{ r: 6 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-               <div className="bg-brand-50 border border-brand-100 rounded-2xl p-5 shadow-sm">
-                  <span className="text-[10px] font-black text-brand-700 uppercase tracking-widest">{t('points').toLowerCase()}</span>
-                  <div className="mt-1"><span className={`text-3xl font-black tracking-tighter ${progressData.userTotal < 0 ? 'text-rose-500' : 'text-brand-600'}`}>{progressData.userTotal}</span></div>
+               <div className="bg-brand-50 dark:bg-brand-900/30 border border-brand-100 dark:border-brand-800 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-black text-brand-700 dark:text-brand-300 uppercase tracking-widest">{t('points').toLowerCase()}</span>
+                  <div className="mt-1"><span className={`text-3xl font-black tracking-tighter ${progressData.userTotal < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-brand-600'}`}>{progressData.userTotal}</span></div>
                </div>
-               <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5 shadow-sm">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Groep</span>
-                  <div className="mt-1"><span className={`text-4xl font-black tracking-tighter ${progressData.groupAvg < 0 ? 'text-rose-500' : 'text-slate-800'}`}>{progressData.groupAvg}</span></div>
+               <div className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Groep</span>
+                  <div className="mt-1"><span className={`text-4xl font-black tracking-tighter ${progressData.groupAvg < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>{progressData.groupAvg}</span></div>
                </div>
             </div>
           </div>
         )}
         {activeTab === 'chat' && (
-            <div className="flex flex-col bg-white rounded-3xl border border-slate-100 shadow-sm h-[500px] overflow-hidden relative animate-fadeIn">
+            <div className="flex flex-col bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-sm h-[500px] overflow-hidden relative animate-fadeIn">
                 <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
                     {messages.length === 0 ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 py-10">
+                        <div className="h-full flex flex-col items-center justify-center text-slate-400 dark:text-slate-500 space-y-2 py-10">
                             <MessageCircle size={48} strokeWidth={1} />
                             <p className="text-sm font-medium">Start the conversation!</p>
                         </div>
@@ -690,13 +706,13 @@ const ChallengeDetail: React.FC = () => {
                             return (
                                 <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} animate-fadeIn`}>
                                     <div className={`flex max-w-[80%] gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
-                                        <img src={m.userAvatar || `https://api.dicebear.com/9.x/initials/svg?seed=${m.userName}`} alt={m.userName} className="w-8 h-8 rounded-full bg-slate-100 shrink-0" />
+                                        <img src={m.userAvatar || `https://api.dicebear.com/9.x/initials/svg?seed=${m.userName}`} alt={m.userName} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-700 shrink-0" />
                                         <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                                            {!isMe && <span className="text-[10px] font-bold text-slate-500 mb-1 ml-1 tracking-wider">{m.userName}</span>}
-                                            <div className={`px-4 py-2 rounded-2xl text-sm ${isMe ? 'bg-brand-500 text-white rounded-tr-none shadow-md shadow-brand-500/10' : 'bg-slate-100 text-slate-900 rounded-tl-none'}`}>
+                                            {!isMe && <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1 ml-1 tracking-wider">{m.userName}</span>}
+                                            <div className={`px-4 py-2 rounded-2xl text-sm ${isMe ? 'bg-brand-500 text-white rounded-tr-none shadow-md shadow-brand-500/10' : 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-slate-100 rounded-tl-none'}`}>
                                                 <p className="selectable leading-relaxed">{m.messageText}</p>
                                             </div>
-                                            <span className="text-[9px] text-slate-400 mt-1 px-1">{formattedTime}</span>
+                                            <span className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 px-1">{formattedTime}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -704,11 +720,11 @@ const ChallengeDetail: React.FC = () => {
                         })
                     )}
                 </div>
-                <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-50 bg-white flex gap-2 items-end">
-                    <textarea 
+                <form onSubmit={handleSendMessage} className="p-3 border-t border-slate-50 dark:border-slate-700 bg-white dark:bg-slate-800 flex gap-2 items-end">
+                    <textarea
                         rows={1}
-                        placeholder={t('type_message')} 
-                        className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500 text-sm max-h-32 transition-all resize-none"
+                        placeholder={t('type_message')}
+                        className="flex-1 bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-700 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-brand-500 text-sm max-h-32 transition-all resize-none text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyDown={(e) => {
@@ -718,8 +734,8 @@ const ChallengeDetail: React.FC = () => {
                             }
                         }}
                     />
-                    <button 
-                        type="submit" 
+                    <button
+                        type="submit"
                         disabled={!newMessage.trim() || isSending}
                         className="w-12 h-12 rounded-2xl bg-brand-500 text-white flex items-center justify-center shadow-lg shadow-brand-500/20 active:scale-90 transition-all disabled:opacity-50 disabled:grayscale"
                     >
@@ -731,16 +747,16 @@ const ChallengeDetail: React.FC = () => {
       </div>
 
       {isDeleteModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn" onClick={() => !isDeleting && setIsDeleteModalOpen(false)}>
-           <div className="bg-white rounded-3xl p-6 w-full max-sm shadow-2xl animate-scaleIn relative" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setIsDeleteModalOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full transition-colors" disabled={isDeleting}><X size={20} /></button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/60 backdrop-blur-sm animate-fadeIn" onClick={() => !isDeleting && setIsDeleteModalOpen(false)}>
+           <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 w-full max-sm shadow-2xl animate-scaleIn relative" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setIsDeleteModalOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 rounded-full transition-colors" disabled={isDeleting}><X size={20} /></button>
               <div className="flex flex-col items-center text-center mb-6">
-                 <div className="w-14 h-14 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mb-4 shadow-sm"><AlertTriangle size={28} /></div>
-                 <h3 className="text-xl font-bold text-slate-900 mb-2 tracking-tighter">{t('delete_confirm_title')}</h3>
-                 <p className="text-slate-500 text-sm font-medium leading-relaxed">Type de naam om te verwijderen: <br/><span className="text-slate-900 font-bold block mt-2 text-base select-all">"{challenge.name}"</span></p>
+                 <div className="w-14 h-14 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded-2xl flex items-center justify-center mb-4 shadow-sm"><AlertTriangle size={28} /></div>
+                 <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2 tracking-tighter">{t('delete_confirm_title')}</h3>
+                 <p className="text-slate-500 dark:text-slate-400 text-sm font-medium leading-relaxed">Type de naam om te verwijderen: <br/><span className="text-slate-900 dark:text-slate-100 font-bold block mt-2 text-base select-all">"{challenge.name}"</span></p>
               </div>
               <div className="space-y-4">
-                <input autoFocus type="text" placeholder={challenge.name} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-slate-900 font-bold text-center tracking-widest" value={deleteConfirmText} onChange={e => setDeleteConfirmText(e.target.value)} />
+                <input autoFocus type="text" placeholder={challenge.name} className="w-full p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-600 rounded-2xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-slate-900 dark:text-slate-100 font-bold text-center tracking-widest placeholder:text-slate-400 dark:placeholder:text-slate-500" value={deleteConfirmText} onChange={e => setDeleteConfirmText(e.target.value)} />
                 <button disabled={deleteConfirmText !== challenge.name || isDeleting} onClick={handleConfirmDelete} className="w-full py-4 px-6 rounded-2xl font-bold text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-50 uppercase tracking-widest shadow-lg shadow-red-600/20 flex items-center justify-center gap-2">
                    {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />} {t('delete')}
                 </button>
