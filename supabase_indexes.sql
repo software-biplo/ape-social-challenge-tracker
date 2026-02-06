@@ -72,3 +72,68 @@ CREATE POLICY "Participants can send messages"
 
 -- Enable real-time for chat messages
 ALTER PUBLICATION supabase_realtime ADD TABLE challenge_messages;
+
+-- ============================================================
+-- RPC: get_challenge_stats
+-- Returns all aggregated stats for a challenge in one call,
+-- eliminating the need to fetch all individual completion rows.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION get_challenge_stats(p_challenge_id UUID)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  result JSON;
+BEGIN
+  SELECT json_build_object(
+    -- 1. Total score per user (for overall leaderboard)
+    'scores', (
+      SELECT COALESCE(json_agg(row_to_json(s)), '[]'::json)
+      FROM (
+        SELECT user_id, SUM(points_at_time)::int AS total_score
+        FROM goal_completions
+        WHERE challenge_id = p_challenge_id
+        GROUP BY user_id
+      ) s
+    ),
+    -- 2. Score per user per goal (for per-goal leaderboard)
+    'goal_scores', (
+      SELECT COALESCE(json_agg(row_to_json(gs)), '[]'::json)
+      FROM (
+        SELECT user_id, goal_id, SUM(points_at_time)::int AS score
+        FROM goal_completions
+        WHERE challenge_id = p_challenge_id
+        GROUP BY user_id, goal_id
+      ) gs
+    ),
+    -- 3. Period completion counts per user per goal (for daily/weekly/monthly progress UI)
+    'period_counts', (
+      SELECT COALESCE(json_agg(row_to_json(pc)), '[]'::json)
+      FROM (
+        SELECT user_id, goal_id, period_key, COUNT(*)::int AS count
+        FROM goal_completions
+        WHERE challenge_id = p_challenge_id
+        GROUP BY user_id, goal_id, period_key
+      ) pc
+    ),
+    -- 4. Daily points for last 7 days (for progress chart)
+    'daily_points', (
+      SELECT COALESCE(json_agg(row_to_json(dp)), '[]'::json)
+      FROM (
+        SELECT user_id, goal_id,
+               (completion_at AT TIME ZONE 'UTC')::date AS day,
+               SUM(points_at_time)::int AS points
+        FROM goal_completions
+        WHERE challenge_id = p_challenge_id
+          AND completion_at >= (NOW() - INTERVAL '7 days')::date
+        GROUP BY user_id, goal_id, (completion_at AT TIME ZONE 'UTC')::date
+        ORDER BY day
+      ) dp
+    )
+  ) INTO result;
+
+  RETURN result;
+END;
+$$;
