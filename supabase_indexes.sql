@@ -119,16 +119,18 @@ BEGIN
       ) pc
     ),
     -- 4. Daily points for last 7 days (for progress chart)
+    -- Cast directly to date (no AT TIME ZONE) since completion_at is stored
+    -- at noon UTC, making the UTC date always match the intended local date.
     'daily_points', (
       SELECT COALESCE(json_agg(row_to_json(dp)), '[]'::json)
       FROM (
         SELECT user_id, goal_id,
-               (completion_at AT TIME ZONE 'UTC')::date AS day,
+               completion_at::date AS day,
                SUM(points_at_time)::int AS points
         FROM goal_completions
         WHERE challenge_id = p_challenge_id
           AND completion_at >= (NOW() - INTERVAL '7 days')::date
-        GROUP BY user_id, goal_id, (completion_at AT TIME ZONE 'UTC')::date
+        GROUP BY user_id, goal_id, completion_at::date
         ORDER BY day
       ) dp
     )

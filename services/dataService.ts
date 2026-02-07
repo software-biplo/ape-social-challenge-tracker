@@ -584,13 +584,17 @@ const SupabaseApi = {
          }
      }
 
+     // Store completion_at at noon UTC for the selected date to avoid
+     // day-boundary timezone mismatches (midnight CET = previous day UTC)
+     const noonUTC = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0));
+
      const { error: logError_ } = await supabase.from('goal_completions').insert({
        challenge_id: challengeId,
        goal_id: goalId,
        user_id: userId,
        points_at_time: points,
        period_key: periodKey,
-       completion_at: date.toISOString()
+       completion_at: noonUTC.toISOString()
      });
 
      if (logError_) {

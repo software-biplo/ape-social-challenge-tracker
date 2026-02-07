@@ -358,7 +358,8 @@ const ChallengeDetail: React.FC = () => {
     let cumulativeGroupSum = 0;
     const participantCount = challenge.participants.length || 1;
     const chart = days.map(day => {
-       const dayStr = format(day, 'yyyy-MM-dd');
+       // Build date string from local date parts to match SQL's completion_at::date (stored at noon UTC)
+       const dayStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
        const dayEntries = stats.dailyPoints.filter(dp => {
          const matchesDay = dp.day === dayStr;
          const matchesGoal = selectedProgressGoalId === 'total' || dp.goal_id === selectedProgressGoalId;
