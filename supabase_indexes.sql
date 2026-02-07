@@ -119,18 +119,29 @@ BEGIN
       ) pc
     ),
     -- 4. Daily points for last 7 days (for progress chart)
-    -- Cast directly to date (no AT TIME ZONE) since completion_at is stored
-    -- at noon UTC, making the UTC date always match the intended local date.
+    -- For daily goals, extract the date from period_key (e.g. 'daily-2026-02-07')
+    -- because completion_at in UTC can land on the wrong date for UTC+N users.
+    -- For non-daily goals, fall back to completion_at::date.
     'daily_points', (
       SELECT COALESCE(json_agg(row_to_json(dp)), '[]'::json)
       FROM (
         SELECT user_id, goal_id,
-               completion_at::date AS day,
+               CASE WHEN period_key LIKE 'daily-%'
+                    THEN SUBSTRING(period_key FROM 7)::date
+                    ELSE completion_at::date
+               END AS day,
                SUM(points_at_time)::int AS points
         FROM goal_completions
         WHERE challenge_id = p_challenge_id
-          AND completion_at >= (NOW() - INTERVAL '7 days')::date
-        GROUP BY user_id, goal_id, completion_at::date
+          AND CASE WHEN period_key LIKE 'daily-%'
+                   THEN SUBSTRING(period_key FROM 7)::date
+                   ELSE completion_at::date
+              END >= (NOW() - INTERVAL '7 days')::date
+        GROUP BY user_id, goal_id,
+                 CASE WHEN period_key LIKE 'daily-%'
+                      THEN SUBSTRING(period_key FROM 7)::date
+                      ELSE completion_at::date
+                 END
         ORDER BY day
       ) dp
     )
