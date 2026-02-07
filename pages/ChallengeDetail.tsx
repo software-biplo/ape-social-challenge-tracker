@@ -355,10 +355,11 @@ const ChallengeDetail: React.FC = () => {
     if (!challenge || activeTab !== 'progress') return { chart: [], userTotal: 0, groupAvg: 0 };
     // Derive the 7-day range from the actual data returned by the SQL query
     // to avoid mismatch between server UTC dates and client local dates.
-    const uniqueDays = [...new Set(stats.dailyPoints.map(dp => dp.day))].sort();
-    const days = uniqueDays.length > 0
-      ? uniqueDays.map(d => { const [y, m, day] = d.split('-').map(Number); return new Date(y, m - 1, day); })
-      : eachDayOfInterval({ start: subDays(new Date(), 6), end: new Date() });
+    // Always include today (local) so the chart ends on the current day.
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const uniqueDays = [...new Set([...stats.dailyPoints.map(dp => dp.day), todayStr])].sort();
+    const days = uniqueDays.map(d => { const [y, m, day] = d.split('-').map(Number); return new Date(y, m - 1, day); });
     let cumulativeUser = 0;
     let cumulativeGroupSum = 0;
     const participantCount = challenge.participants.length || 1;
