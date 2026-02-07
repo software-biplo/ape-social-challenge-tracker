@@ -118,3 +118,6 @@ dist
 
 # Local Environment Secrets
 env.ts
+
+# Dev artifacts
+*.csv
