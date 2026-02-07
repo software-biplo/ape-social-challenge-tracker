@@ -353,13 +353,17 @@ const ChallengeDetail: React.FC = () => {
 
   const progressData = useMemo(() => {
     if (!challenge || activeTab !== 'progress') return { chart: [], userTotal: 0, groupAvg: 0 };
-    const days = eachDayOfInterval({ start: subDays(new Date(), 6), end: new Date() });
+    // Derive the 7-day range from the actual data returned by the SQL query
+    // to avoid mismatch between server UTC dates and client local dates.
+    const uniqueDays = [...new Set(stats.dailyPoints.map(dp => dp.day))].sort();
+    const days = uniqueDays.length > 0
+      ? uniqueDays.map(d => { const [y, m, day] = d.split('-').map(Number); return new Date(y, m - 1, day); })
+      : eachDayOfInterval({ start: subDays(new Date(), 6), end: new Date() });
     let cumulativeUser = 0;
     let cumulativeGroupSum = 0;
     const participantCount = challenge.participants.length || 1;
     const chart = days.map(day => {
-       // Build date string from local date parts to match SQL's completion_at::date (stored at noon UTC)
-       const dayStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+       const dayStr = typeof day === 'string' ? day : `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
        const dayEntries = stats.dailyPoints.filter(dp => {
          const matchesDay = dp.day === dayStr;
          const matchesGoal = selectedProgressGoalId === 'total' || dp.goal_id === selectedProgressGoalId;
@@ -681,10 +685,10 @@ const ChallengeDetail: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
                <div className="bg-brand-50 dark:bg-brand-900/30 border border-brand-100 dark:border-brand-800 rounded-2xl p-5 shadow-sm">
                   <span className="text-[10px] font-black text-brand-700 dark:text-brand-300 uppercase tracking-widest">{t('points').toLowerCase()}</span>
-                  <div className="mt-1"><span className={`text-3xl font-black tracking-tighter ${progressData.userTotal < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-brand-600'}`}>{progressData.userTotal}</span></div>
+                  <div className="mt-1"><span className={`text-3xl font-black tracking-tighter ${(stats.scores.find(s => s.user_id === user?.id)?.total_score ?? 0) < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-brand-600'}`}>{stats.scores.find(s => s.user_id === user?.id)?.total_score ?? 0}</span></div>
                </div>
                <div className="bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-700 rounded-2xl p-5 shadow-sm">
-                  <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Groep</span>
+                  <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">Groep Gem. (7d)</span>
                   <div className="mt-1"><span className={`text-4xl font-black tracking-tighter ${progressData.groupAvg < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-800 dark:text-slate-200'}`}>{progressData.groupAvg}</span></div>
                </div>
             </div>
