@@ -79,7 +79,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE challenge_messages;
 -- eliminating the need to fetch all individual completion rows.
 -- ============================================================
 
-CREATE OR REPLACE FUNCTION get_challenge_stats(p_challenge_id UUID)
+CREATE OR REPLACE FUNCTION get_challenge_stats_v2(p_challenge_id UUID, p_user_id UUID DEFAULT NULL)
 RETURNS JSON
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -108,24 +108,23 @@ BEGIN
         GROUP BY user_id, goal_id
       ) gs
     ),
-    -- 3. Period completion counts per user per goal (for daily/weekly/monthly progress UI)
+    -- 3. Period completion counts — current user only (for daily progress UI)
     'period_counts', (
       SELECT COALESCE(json_agg(row_to_json(pc)), '[]'::json)
       FROM (
         SELECT user_id, goal_id, period_key, COUNT(*)::int AS count
         FROM goal_completions
         WHERE challenge_id = p_challenge_id
+          AND (p_user_id IS NULL OR user_id = p_user_id)
         GROUP BY user_id, goal_id, period_key
       ) pc
     ),
-    -- 4. Daily points for last 7 days (for progress chart)
-    -- For daily goals, extract the date from period_key (e.g. 'daily-2026-02-07')
-    -- because completion_at in UTC can land on the wrong date for UTC+N users.
-    -- For non-daily goals, fall back to completion_at::date.
-    'daily_points', (
-      SELECT COALESCE(json_agg(row_to_json(dp)), '[]'::json)
+    -- 4a. Current user's daily points per goal (last 7 days, for "Jouw Punten" line)
+    -- Uses period_key date for daily goals to avoid UTC timezone mismatch.
+    'user_daily_points', (
+      SELECT COALESCE(json_agg(row_to_json(udp)), '[]'::json)
       FROM (
-        SELECT user_id, goal_id,
+        SELECT goal_id,
                CASE WHEN period_key LIKE 'daily-%'
                     THEN SUBSTRING(period_key FROM 7)::date
                     ELSE completion_at::date
@@ -133,17 +132,43 @@ BEGIN
                SUM(points_at_time)::int AS points
         FROM goal_completions
         WHERE challenge_id = p_challenge_id
+          AND (p_user_id IS NULL OR user_id = p_user_id)
           AND CASE WHEN period_key LIKE 'daily-%'
                    THEN SUBSTRING(period_key FROM 7)::date
                    ELSE completion_at::date
               END >= (NOW() - INTERVAL '7 days')::date
-        GROUP BY user_id, goal_id,
+        GROUP BY goal_id,
                  CASE WHEN period_key LIKE 'daily-%'
                       THEN SUBSTRING(period_key FROM 7)::date
                       ELSE completion_at::date
                  END
         ORDER BY day
-      ) dp
+      ) udp
+    ),
+    -- 4b. Group total daily points per goal (last 7 days, for "Gemiddelde" line)
+    -- Aggregates ALL users into a single total_points per day per goal.
+    'group_daily_points', (
+      SELECT COALESCE(json_agg(row_to_json(gdp)), '[]'::json)
+      FROM (
+        SELECT goal_id,
+               CASE WHEN period_key LIKE 'daily-%'
+                    THEN SUBSTRING(period_key FROM 7)::date
+                    ELSE completion_at::date
+               END AS day,
+               SUM(points_at_time)::int AS total_points
+        FROM goal_completions
+        WHERE challenge_id = p_challenge_id
+          AND CASE WHEN period_key LIKE 'daily-%'
+                   THEN SUBSTRING(period_key FROM 7)::date
+                   ELSE completion_at::date
+              END >= (NOW() - INTERVAL '7 days')::date
+        GROUP BY goal_id,
+                 CASE WHEN period_key LIKE 'daily-%'
+                      THEN SUBSTRING(period_key FROM 7)::date
+                      ELSE completion_at::date
+                 END
+        ORDER BY day
+      ) gdp
     )
   ) INTO result;
 
