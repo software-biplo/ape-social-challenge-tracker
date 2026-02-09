@@ -683,15 +683,16 @@ const SupabaseApi = {
    * Replaces getLogs for score/leaderboard/progress calculations,
    * avoiding the PostgREST 1000-row default limit.
    */
-  getStats: async (challengeId: string): Promise<ChallengeStats> => {
-    log(`[DB] getStats: ${challengeId}`);
-    const { data, error } = await supabase.rpc('get_challenge_stats', {
-      p_challenge_id: challengeId
+  getStats: async (challengeId: string, userId: string): Promise<ChallengeStats> => {
+    log(`[DB] getStats: ${challengeId} for user ${userId}`);
+    const { data, error } = await supabase.rpc('get_challenge_stats_v2', {
+      p_challenge_id: challengeId,
+      p_user_id: userId
     });
 
     if (error) {
       logError(`[DB Error] getStats:`, error.message);
-      return { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] };
+      return { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] };
     }
 
     const raw = data || {};
@@ -708,11 +709,15 @@ const SupabaseApi = {
         period_key: pc.period_key,
         count: pc.count
       })),
-      dailyPoints: (raw.daily_points || []).map((dp: any) => ({
-        user_id: dp.user_id,
+      userDailyPoints: (raw.user_daily_points || []).map((dp: any) => ({
         goal_id: dp.goal_id,
         day: dp.day,
         points: dp.points
+      })),
+      groupDailyPoints: (raw.group_daily_points || []).map((dp: any) => ({
+        goal_id: dp.goal_id,
+        day: dp.day,
+        total_points: dp.total_points
       }))
     };
   },

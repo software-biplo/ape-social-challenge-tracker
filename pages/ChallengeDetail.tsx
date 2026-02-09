@@ -27,7 +27,7 @@ const ChallengeDetail: React.FC = () => {
 
   // Deriving data directly from Context Cache for reactivity
   const challenge = id ? challengeCache[id] : undefined;
-  const stats: ChallengeStats = id ? (statsCache[id] || { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] }) : { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] };
+  const stats: ChallengeStats = id ? (statsCache[id] || { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] }) : { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] };
 
   const [activeTab, setActiveTab] = useState<'goals' | 'leaderboard' | 'progress' | 'chat'>('goals');
   const [loadingInitial, setLoadingInitial] = useState(!challenge);
@@ -353,25 +353,26 @@ const ChallengeDetail: React.FC = () => {
 
   const progressData = useMemo(() => {
     if (!challenge || activeTab !== 'progress') return { chart: [], userTotal: 0, groupAvg: 0 };
-    // Derive the 7-day range from the actual data returned by the SQL query
-    // to avoid mismatch between server UTC dates and client local dates.
-    // Always include today (local) so the chart ends on the current day.
+    // Derive the 7-day range from both data arrays + today
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const uniqueDays = [...new Set([...stats.dailyPoints.map(dp => dp.day), todayStr])].sort();
+    const allDays = new Set<string>();
+    stats.userDailyPoints.forEach(dp => allDays.add(dp.day));
+    stats.groupDailyPoints.forEach(dp => allDays.add(dp.day));
+    allDays.add(todayStr);
+    const uniqueDays = [...allDays].sort();
     const days = uniqueDays.map(d => { const [y, m, day] = d.split('-').map(Number); return new Date(y, m - 1, day); });
     let cumulativeUser = 0;
     let cumulativeGroupSum = 0;
     const participantCount = challenge.participants.length || 1;
     const chart = days.map(day => {
-       const dayStr = typeof day === 'string' ? day : `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-       const dayEntries = stats.dailyPoints.filter(dp => {
-         const matchesDay = dp.day === dayStr;
-         const matchesGoal = selectedProgressGoalId === 'total' || dp.goal_id === selectedProgressGoalId;
-         return matchesDay && matchesGoal;
-       });
-       const myDayPoints = dayEntries.filter(dp => dp.user_id === user?.id).reduce((sum, dp) => sum + dp.points, 0);
-       const totalDayPoints = dayEntries.reduce((sum, dp) => sum + dp.points, 0);
+       const dayStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+       const myDayPoints = stats.userDailyPoints
+         .filter(dp => dp.day === dayStr && (selectedProgressGoalId === 'total' || dp.goal_id === selectedProgressGoalId))
+         .reduce((sum, dp) => sum + dp.points, 0);
+       const totalDayPoints = stats.groupDailyPoints
+         .filter(dp => dp.day === dayStr && (selectedProgressGoalId === 'total' || dp.goal_id === selectedProgressGoalId))
+         .reduce((sum, dp) => sum + dp.total_points, 0);
        const avgDayPoints = totalDayPoints / participantCount;
        cumulativeUser += myDayPoints;
        cumulativeGroupSum += avgDayPoints;
@@ -382,7 +383,7 @@ const ChallengeDetail: React.FC = () => {
        };
     });
     return { chart, userTotal: cumulativeUser, groupAvg: Math.round(cumulativeGroupSum) };
-  }, [stats.dailyPoints, challenge, user, dateLocale, selectedProgressGoalId, activeTab]);
+  }, [stats.userDailyPoints, stats.groupDailyPoints, challenge, dateLocale, selectedProgressGoalId, activeTab]);
 
   // Recharts theme-aware colors
   const chartGridStroke = resolvedTheme === 'dark' ? '#334155' : '#f1f5f9';

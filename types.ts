@@ -73,12 +73,14 @@ export interface LeaderboardEntry {
 
 // Aggregated stats returned by get_challenge_stats RPC
 export interface ChallengeStats {
-  // Total score per user
+  // Total score per user (all users, for leaderboard)
   scores: { user_id: string; total_score: number }[];
-  // Score per user per goal
+  // Score per user per goal (all users, for per-goal leaderboard)
   goalScores: { user_id: string; goal_id: string; score: number }[];
-  // Period completion counts (for checking daily/weekly/monthly limits)
+  // Period completion counts — current user only (for daily progress UI)
   periodCounts: { user_id: string; goal_id: string; period_key: string; count: number }[];
-  // Daily points aggregated per user per goal (last 7 days)
-  dailyPoints: { user_id: string; goal_id: string; day: string; points: number }[];
+  // Current user's daily points per goal (last 7 days)
+  userDailyPoints: { goal_id: string; day: string; points: number }[];
+  // Group aggregate daily points per goal (last 7 days, sum of ALL users)
+  groupDailyPoints: { goal_id: string; day: string; total_points: number }[];
 }

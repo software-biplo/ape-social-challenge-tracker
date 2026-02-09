@@ -7,7 +7,7 @@ import { useAuth } from './AuthContext';
 // Cache TTL: don't re-fetch if data was fetched less than this many ms ago
 const CACHE_TTL_MS = 30_000; // 30 seconds
 
-const EMPTY_STATS: ChallengeStats = { scores: [], goalScores: [], periodCounts: [], dailyPoints: [] };
+const EMPTY_STATS: ChallengeStats = { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] };
 
 interface ChallengeContextType {
   challenges: Challenge[] | null;
@@ -160,6 +160,7 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
   }, []);
 
   const fetchStats = useCallback(async (id: string) => {
+    if (!user) return;
     // Skip if recently fetched
     if (Date.now() - (lastFetchStatsRef.current[id] || 0) < CACHE_TTL_MS) return;
 
@@ -168,7 +169,7 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     const request = (async () => {
       try {
-        const stats = await api.getStats(id);
+        const stats = await api.getStats(id, user.id);
         setStatsCache(prev => ({ ...prev, [id]: stats }));
         lastFetchStatsRef.current[id] = Date.now();
 
@@ -200,7 +201,7 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
 
     inFlightStatsRef.current[id] = request;
     return request;
-  }, []);
+  }, [user]);
 
   /**
    * Invalidate TTL for a specific challenge so the next fetch actually runs.
@@ -248,15 +249,26 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
         newPeriodCounts.push({ user_id: log.userId, goal_id: log.goalId, period_key: optimisticPeriodKey, count: 1 });
       }
 
-      // Update daily_points
-      const newDailyPoints = [...stats.dailyPoints];
-      const existingDp = newDailyPoints.findIndex(
-        dp => dp.user_id === log.userId && dp.goal_id === log.goalId && dp.day === dayStr
+      // Update userDailyPoints (current user's chart line)
+      const newUserDailyPoints = [...stats.userDailyPoints];
+      const existingUdp = newUserDailyPoints.findIndex(
+        dp => dp.goal_id === log.goalId && dp.day === dayStr
       );
-      if (existingDp >= 0) {
-        newDailyPoints[existingDp] = { ...newDailyPoints[existingDp], points: newDailyPoints[existingDp].points + log.pointsEarned };
+      if (existingUdp >= 0) {
+        newUserDailyPoints[existingUdp] = { ...newUserDailyPoints[existingUdp], points: newUserDailyPoints[existingUdp].points + log.pointsEarned };
       } else {
-        newDailyPoints.push({ user_id: log.userId, goal_id: log.goalId, day: dayStr, points: log.pointsEarned });
+        newUserDailyPoints.push({ goal_id: log.goalId, day: dayStr, points: log.pointsEarned });
+      }
+
+      // Update groupDailyPoints (group total for average line)
+      const newGroupDailyPoints = [...stats.groupDailyPoints];
+      const existingGdp = newGroupDailyPoints.findIndex(
+        dp => dp.goal_id === log.goalId && dp.day === dayStr
+      );
+      if (existingGdp >= 0) {
+        newGroupDailyPoints[existingGdp] = { ...newGroupDailyPoints[existingGdp], total_points: newGroupDailyPoints[existingGdp].total_points + log.pointsEarned };
+      } else {
+        newGroupDailyPoints.push({ goal_id: log.goalId, day: dayStr, total_points: log.pointsEarned });
       }
 
       return {
@@ -265,7 +277,8 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
           scores: newScores,
           goalScores: newGoalScores,
           periodCounts: newPeriodCounts,
-          dailyPoints: newDailyPoints
+          userDailyPoints: newUserDailyPoints,
+          groupDailyPoints: newGroupDailyPoints
         }
       };
     });
@@ -313,9 +326,15 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
           : pc
       );
 
-      const newDailyPoints = stats.dailyPoints.map(dp =>
-        dp.user_id === log.userId && dp.goal_id === log.goalId && dp.day === dayStr
+      const newUserDailyPoints = stats.userDailyPoints.map(dp =>
+        dp.goal_id === log.goalId && dp.day === dayStr
           ? { ...dp, points: dp.points - log.pointsEarned }
+          : dp
+      );
+
+      const newGroupDailyPoints = stats.groupDailyPoints.map(dp =>
+        dp.goal_id === log.goalId && dp.day === dayStr
+          ? { ...dp, total_points: dp.total_points - log.pointsEarned }
           : dp
       );
 
@@ -325,7 +344,8 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
           scores: newScores,
           goalScores: newGoalScores,
           periodCounts: newPeriodCounts,
-          dailyPoints: newDailyPoints
+          userDailyPoints: newUserDailyPoints,
+          groupDailyPoints: newGroupDailyPoints
         }
       };
     });
@@ -381,11 +401,12 @@ export const ChallengeProvider: React.FC<{ children: ReactNode }> = ({ children 
       return cached;
     }
 
-    const latest = await api.getStats(id);
+    if (!user) return EMPTY_STATS;
+    const latest = await api.getStats(id, user.id);
     setStatsCache(prev => ({ ...prev, [id]: latest }));
     lastFetchStatsRef.current[id] = Date.now();
     return latest;
-  }, [statsCache, fetchStats]);
+  }, [statsCache, fetchStats, user]);
 
   const clearCache = useCallback(() => {
     setChallenges(null);
