@@ -11,6 +11,7 @@ import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import LoadingScreen from '../components/LoadingScreen';
+import WrappedTab from '../components/WrappedTab';
 import { Check, Minus, Settings, Loader2, Trash2, ArrowLeft, CheckCircle, LogOut, ShieldCheck, Lock, AlertTriangle, X, ChevronDown, ChevronLeft, ChevronRight, Send, MessageCircle, Info } from 'lucide-react';
 import { ResponsiveContainer, CartesianGrid, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 // Fixed date-fns imports to use named imports from the main package to resolve 'not callable' errors
@@ -29,10 +30,15 @@ const ChallengeDetail: React.FC = () => {
   const challenge = id ? challengeCache[id] : undefined;
   const stats: ChallengeStats = id ? (statsCache[id] || { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] }) : { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] };
 
-  const [activeTab, setActiveTab] = useState<'goals' | 'leaderboard' | 'progress' | 'chat'>('goals');
+  const [activeTab, setActiveTab] = useState<'goals' | 'wrapped' | 'leaderboard' | 'progress' | 'chat'>('goals');
   const [loadingInitial, setLoadingInitial] = useState(!challenge);
   const [processingGoalId, setProcessingGoalId] = useState<string | null>(null);
   const pendingCompletionsRef = useRef<Record<string, number>>({});
+  const [wrappedPreviewEnabled, setWrappedPreviewEnabled] = useState(false);
+  const [wrappedLogs, setWrappedLogs] = useState<CompletionLog[] | null>(null);
+  const [isWrappedLogsLoading, setIsWrappedLogsLoading] = useState(false);
+  const [showWrappedConfetti, setShowWrappedConfetti] = useState(false);
+  const previewConfettiShownRef = useRef(false);
 
   // Date navigation: allows viewing/logging goals for past days
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -67,6 +73,14 @@ const ChallengeDetail: React.FC = () => {
       init();
     }
   }, [id, fetchChallengeDetail, fetchStats]);
+
+  useEffect(() => {
+    setWrappedPreviewEnabled(false);
+    setWrappedLogs(null);
+    setIsWrappedLogsLoading(false);
+    setShowWrappedConfetti(false);
+    previewConfettiShownRef.current = false;
+  }, [id]);
 
   // Real-time Chat Subscription
   // OPTIMIZED: Use payload.new directly + local participant profile cache
@@ -143,6 +157,67 @@ const ChallengeDetail: React.FC = () => {
       const start = startOfDay(parseISO(challenge.startDate));
       return isAfter(subDays(selectedDate, 1), start) || isSameDay(subDays(selectedDate, 1), start);
   }, [challenge, selectedDate]);
+
+  const challengeEnded = useMemo(() => {
+      if (!challenge) return false;
+      const end = startOfDay(parseISO(challenge.endDate));
+      return isAfter(startOfDay(new Date()), end);
+  }, [challenge]);
+
+  const wrappedEnabled = challengeEnded || wrappedPreviewEnabled;
+
+  useEffect(() => {
+    if (wrappedEnabled && activeTab === 'goals') setActiveTab('wrapped');
+    if (!wrappedEnabled && activeTab === 'wrapped') setActiveTab('goals');
+  }, [wrappedEnabled, activeTab]);
+
+  useEffect(() => {
+    if (!id || !wrappedEnabled || wrappedLogs) return;
+    let cancelled = false;
+
+    const loadWrappedLogs = async () => {
+      setIsWrappedLogsLoading(true);
+      try {
+        const logs = await api.getLogs(id);
+        if (!cancelled) setWrappedLogs(logs);
+      } catch (error) {
+        if (!cancelled) toast.error(t('error_generic'));
+      } finally {
+        if (!cancelled) setIsWrappedLogsLoading(false);
+      }
+    };
+
+    loadWrappedLogs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, wrappedEnabled, wrappedLogs, t]);
+
+  useEffect(() => {
+    if (!challenge || activeTab !== 'wrapped' || !wrappedEnabled) return;
+
+    let shouldShow = false;
+    if (challengeEnded) {
+      const seenKey = `ape_wrapped_seen_${challenge.id}`;
+      if (!localStorage.getItem(seenKey)) {
+        shouldShow = true;
+        localStorage.setItem(seenKey, '1');
+      }
+    } else if (!previewConfettiShownRef.current) {
+      shouldShow = true;
+      previewConfettiShownRef.current = true;
+    }
+
+    if (!shouldShow) return;
+    setShowWrappedConfetti(true);
+
+    const timer = window.setTimeout(() => {
+      setShowWrappedConfetti(false);
+    }, 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [activeTab, challenge, wrappedEnabled, challengeEnded]);
 
   const handleLogGoal = async (goal: Goal) => {
     if (!user || !id || processingGoalId) return;
@@ -403,6 +478,21 @@ const ChallengeDetail: React.FC = () => {
   if (!challenge) return <div className="p-8 text-center text-red-500 dark:text-red-400">Challenge not found.</div>;
 
   const isOwner = user?.id === challenge.creatorId;
+  const wrappedTabLabel = language === 'nl' ? 'Wrapped' : language === 'fr' ? 'Wrapped' : 'Wrapped';
+  const previewWrappedLabel = language === 'nl' ? 'Preview Wrapped' : language === 'fr' ? 'Apercu Wrapped' : 'Preview Wrapped';
+  const stopPreviewLabel = language === 'nl' ? 'Stop Preview' : language === 'fr' ? 'Stop Apercu' : 'Stop Preview';
+  const wrappedUnlockInfo = language === 'nl'
+    ? 'Wrapped wordt automatisch beschikbaar zodra de challenge eindigt.'
+    : language === 'fr'
+      ? 'Wrapped sera disponible automatiquement a la fin du challenge.'
+      : 'Wrapped unlocks automatically as soon as the challenge ends.';
+
+  const tabs = [
+    { id: wrappedEnabled ? 'wrapped' : 'goals', label: wrappedEnabled ? wrappedTabLabel : t('my_goals') },
+    { id: 'leaderboard', label: t('leaderboard') },
+    { id: 'progress', label: t('progress') },
+    { id: 'chat', label: t('chat') },
+  ] as const;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -442,6 +532,24 @@ const ChallengeDetail: React.FC = () => {
                 <Lock size={14} /> {t('starts_on')} {format(parseISO(challenge.startDate), 'd MMMM', { locale: dateLocale })}
              </div>
           )}
+          {!challengeEnded && (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => {
+                  setWrappedPreviewEnabled(prev => !prev);
+                  if (!wrappedEnabled) setActiveTab('wrapped');
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider border transition-colors ${
+                  wrappedPreviewEnabled
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
+                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600'
+                }`}
+              >
+                {wrappedPreviewEnabled ? stopPreviewLabel : previewWrappedLabel}
+              </button>
+              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{wrappedUnlockInfo}</span>
+            </div>
+          )}
       </div>
 
       <div className="px-4 md:px-0 sticky top-0 z-30">
@@ -477,15 +585,10 @@ const ChallengeDetail: React.FC = () => {
 
       {/* Adjusted Tab Bar: Font size reduced to text-[10px] for mobile to ensure fitting 4 columns */}
       <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-600 px-4 md:px-0">
-        {[
-          { id: 'goals', label: t('my_goals') },
-          { id: 'leaderboard', label: t('leaderboard') },
-          { id: 'progress', label: t('progress') },
-          { id: 'chat', label: t('chat') },
-        ].map(tab => (
+        {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
+            onClick={() => setActiveTab(tab.id)}
             className={`py-3 px-0 text-[10px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
           >
             {tab.label}
@@ -626,6 +729,16 @@ const ChallengeDetail: React.FC = () => {
               );
             })}
           </div>
+        )}
+        {activeTab === 'wrapped' && wrappedEnabled && (
+          <WrappedTab
+            challenge={challenge}
+            stats={stats}
+            logs={wrappedLogs || []}
+            isLoadingLogs={isWrappedLogsLoading || !wrappedLogs}
+            language={language}
+            showConfetti={showWrappedConfetti}
+          />
         )}
         {activeTab === 'leaderboard' && (
           <div className="animate-fadeIn space-y-6">
