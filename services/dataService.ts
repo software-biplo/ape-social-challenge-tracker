@@ -649,26 +649,44 @@ const SupabaseApi = {
    */
   getLogs: async (challengeId: string, daysBack?: number): Promise<CompletionLog[]> => {
      log(`[DB] getLogs: ${challengeId}`);
-     let query = supabase
-       .from('goal_completions')
-       .select('id, challenge_id, goal_id, user_id, completion_at, points_at_time')
-       .eq('challenge_id', challengeId)
-       .order('completion_at', { ascending: false });
+     const pageSize = 1000;
+     let from = 0;
+     const allLogs: any[] = [];
+     const since = daysBack
+       ? (() => {
+           const d = new Date();
+           d.setDate(d.getDate() - daysBack);
+           return d.toISOString();
+         })()
+       : null;
 
-     // Optional: limit to recent period for performance
-     if (daysBack) {
-       const since = new Date();
-       since.setDate(since.getDate() - daysBack);
-       query = query.gte('completion_at', since.toISOString());
+     while (true) {
+       let query = supabase
+         .from('goal_completions')
+         .select('id, challenge_id, goal_id, user_id, completion_at, points_at_time')
+         .eq('challenge_id', challengeId)
+         .order('completion_at', { ascending: false })
+         .range(from, from + pageSize - 1);
+
+       if (since) {
+         query = query.gte('completion_at', since);
+       }
+
+       const { data, error } = await query;
+
+       if (error) {
+         logError(`[DB Error] getLogs:`, error.message);
+         break;
+       }
+
+       const batch = data || [];
+       allLogs.push(...batch);
+
+       if (batch.length < pageSize) break;
+       from += pageSize;
      }
 
-     const { data, error } = await query;
-
-     if (error) {
-       logError(`[DB Error] getLogs:`, error.message);
-     }
-
-     return (data || []).map(l => ({
+     return allLogs.map(l => ({
        id: l.id,
        challengeId: l.challenge_id,
        goalId: l.goal_id,

@@ -11,6 +11,7 @@ import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import Card from '../components/Card';
 import LoadingScreen from '../components/LoadingScreen';
+import WrappedTab from '../components/WrappedTab';
 import { Check, Minus, Settings, Loader2, Trash2, ArrowLeft, CheckCircle, LogOut, ShieldCheck, Lock, AlertTriangle, X, ChevronDown, ChevronLeft, ChevronRight, Send, MessageCircle, Info } from 'lucide-react';
 import { ResponsiveContainer, CartesianGrid, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 // Fixed date-fns imports to use named imports from the main package to resolve 'not callable' errors
@@ -29,10 +30,13 @@ const ChallengeDetail: React.FC = () => {
   const challenge = id ? challengeCache[id] : undefined;
   const stats: ChallengeStats = id ? (statsCache[id] || { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] }) : { scores: [], goalScores: [], periodCounts: [], userDailyPoints: [], groupDailyPoints: [] };
 
-  const [activeTab, setActiveTab] = useState<'goals' | 'leaderboard' | 'progress' | 'chat'>('goals');
+  const [activeTab, setActiveTab] = useState<'goals' | 'wrapped' | 'leaderboard' | 'progress' | 'chat'>('goals');
   const [loadingInitial, setLoadingInitial] = useState(!challenge);
   const [processingGoalId, setProcessingGoalId] = useState<string | null>(null);
   const pendingCompletionsRef = useRef<Record<string, number>>({});
+  const [wrappedLogs, setWrappedLogs] = useState<CompletionLog[] | null>(null);
+  const [isWrappedLogsLoading, setIsWrappedLogsLoading] = useState(false);
+  const [showWrappedConfetti, setShowWrappedConfetti] = useState(false);
 
   // Date navigation: allows viewing/logging goals for past days
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -67,6 +71,12 @@ const ChallengeDetail: React.FC = () => {
       init();
     }
   }, [id, fetchChallengeDetail, fetchStats]);
+
+  useEffect(() => {
+    setWrappedLogs(null);
+    setIsWrappedLogsLoading(false);
+    setShowWrappedConfetti(false);
+  }, [id]);
 
   // Real-time Chat Subscription
   // OPTIMIZED: Use payload.new directly + local participant profile cache
@@ -143,6 +153,58 @@ const ChallengeDetail: React.FC = () => {
       const start = startOfDay(parseISO(challenge.startDate));
       return isAfter(subDays(selectedDate, 1), start) || isSameDay(subDays(selectedDate, 1), start);
   }, [challenge, selectedDate]);
+
+  const challengeEnded = useMemo(() => {
+      if (!challenge) return false;
+      const end = startOfDay(parseISO(challenge.endDate));
+      return isAfter(startOfDay(new Date()), end);
+  }, [challenge]);
+
+  const wrappedEnabled = challengeEnded;
+
+  useEffect(() => {
+    if (!wrappedEnabled && activeTab === 'wrapped') {
+      setActiveTab('goals');
+    }
+  }, [wrappedEnabled, activeTab]);
+
+  useEffect(() => {
+    if (!id || !wrappedEnabled || wrappedLogs) return;
+    let cancelled = false;
+
+    const loadWrappedLogs = async () => {
+      setIsWrappedLogsLoading(true);
+      try {
+        const logs = await api.getLogs(id);
+        if (!cancelled) setWrappedLogs(logs);
+      } catch (error) {
+        if (!cancelled) toast.error(t('error_generic'));
+      } finally {
+        if (!cancelled) setIsWrappedLogsLoading(false);
+      }
+    };
+
+    loadWrappedLogs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, wrappedEnabled, wrappedLogs, t]);
+
+  useEffect(() => {
+    if (!challenge || activeTab !== 'wrapped' || !wrappedEnabled) return;
+
+    const seenKey = `ape_wrapped_seen_${challenge.id}`;
+    if (localStorage.getItem(seenKey)) return;
+    localStorage.setItem(seenKey, '1');
+    setShowWrappedConfetti(true);
+
+    const timer = window.setTimeout(() => {
+      setShowWrappedConfetti(false);
+    }, 2200);
+
+    return () => window.clearTimeout(timer);
+  }, [activeTab, challenge, wrappedEnabled]);
 
   const handleLogGoal = async (goal: Goal) => {
     if (!user || !id || processingGoalId) return;
@@ -402,7 +464,23 @@ const ChallengeDetail: React.FC = () => {
   if (loadingInitial) return <LoadingScreen />;
   if (!challenge) return <div className="p-8 text-center text-red-500 dark:text-red-400">Challenge not found.</div>;
 
+  const sortedGoals = [...challenge.goals].sort((a, b) => {
+    const groupA = a.points < 0 ? 1 : 0;
+    const groupB = b.points < 0 ? 1 : 0;
+    if (groupA !== groupB) return groupA - groupB;
+    return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+  });
+
   const isOwner = user?.id === challenge.creatorId;
+  const wrappedTabLabel = language === 'nl' ? 'Wrapped' : language === 'fr' ? 'Wrapped' : 'Wrapped';
+
+  const tabs = [
+    ...(wrappedEnabled ? [{ id: 'wrapped', label: wrappedTabLabel }] : []),
+    { id: 'goals', label: t('my_goals') },
+    { id: 'leaderboard', label: t('leaderboard') },
+    { id: 'progress', label: t('progress') },
+    { id: 'chat', label: t('chat') },
+  ] as const;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -475,18 +553,15 @@ const ChallengeDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Adjusted Tab Bar: Font size reduced to text-[10px] for mobile to ensure fitting 4 columns */}
-      <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-600 px-4 md:px-0">
-        {[
-          { id: 'goals', label: t('my_goals') },
-          { id: 'leaderboard', label: t('leaderboard') },
-          { id: 'progress', label: t('progress') },
-          { id: 'chat', label: t('chat') },
-        ].map(tab => (
+      <div
+        className="grid border-b border-slate-200 dark:border-slate-600 px-4 md:px-0"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+      >
+        {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`py-3 px-0 text-[10px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            onClick={() => setActiveTab(tab.id)}
+            className={`py-3 px-0 text-[9px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
           >
             {tab.label}
             {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-brand-500 rounded-t-full" />}
@@ -528,7 +603,7 @@ const ChallengeDetail: React.FC = () => {
               </button>
             </div>
 
-            {challenge.goals.length > 0 && !statsCache[id!] && (
+            {sortedGoals.length > 0 && !statsCache[id!] && (
               <div className="space-y-3 animate-pulse">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm">
@@ -550,7 +625,7 @@ const ChallengeDetail: React.FC = () => {
               </div>
             )}
 
-            {challenge.goals.map(goal => {
+            {sortedGoals.map(goal => {
               const GoalIcon = getIcon(goal.icon);
               const completionsInPeriod = userPeriodCounts.countByGoalId[goal.id] || 0;
               const isCompleted = goal.maxCompletions ? completionsInPeriod >= goal.maxCompletions : false;
@@ -627,12 +702,23 @@ const ChallengeDetail: React.FC = () => {
             })}
           </div>
         )}
+        {activeTab === 'wrapped' && wrappedEnabled && (
+          <WrappedTab
+            challenge={challenge}
+            stats={stats}
+            logs={wrappedLogs || []}
+            isLoadingLogs={isWrappedLogsLoading || !wrappedLogs}
+            language={language}
+            showConfetti={showWrappedConfetti}
+            currentUserId={user?.id}
+          />
+        )}
         {activeTab === 'leaderboard' && (
           <div className="animate-fadeIn space-y-6">
             <div className="relative">
               <select value={selectedLeaderboardGoalId} onChange={(e) => setSelectedLeaderboardGoalId(e.target.value)} className="w-full pl-4 pr-10 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-2xl text-base font-black text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none shadow-sm transition-all">
                 <option value="total">{language === 'nl' ? 'Totaal Klassement' : 'Overall Standing'}</option>
-                {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+                {sortedGoals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
               </select>
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" size={20} />
             </div>
@@ -663,7 +749,7 @@ const ChallengeDetail: React.FC = () => {
                 <div className="relative min-w-[200px]">
                   <select value={selectedProgressGoalId} onChange={(e) => setSelectedProgressGoalId(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 outline-none shadow-sm appearance-none">
                     <option value="total">Alle Doelen</option>
-                    {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+                    {sortedGoals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" size={16} />
                 </div>
