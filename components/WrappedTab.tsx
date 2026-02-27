@@ -23,11 +23,20 @@ type WrappedParticipant = {
 type GoalRanking = {
   goalId: string;
   goalTitle: string;
+  goalPoints: number;
   averageScore: number;
   ranking: WrappedParticipant[];
   topThree: WrappedParticipant[];
   myScore: number;
   myRank: number;
+};
+
+type DailyRecord = {
+  userId: string;
+  name: string;
+  avatar?: string;
+  day: string;
+  amount: number;
 };
 
 const WrappedTab: React.FC<WrappedTabProps> = ({
@@ -61,16 +70,16 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
         introSub: 'De challenge is voorbij. Tijd voor de highlights.',
         slidePodium: 'Top 3 Podium',
         slidePodiumSub: 'De sterkste finishers van de challenge',
-        slideChampions: 'Winnaars & Verliezers',
-        slideChampionsSub: 'Wie was het sterkst, wie was er minder sterk.',
+        slideChampions: 'Dagrecords',
+        slideChampionsSub: 'Sterkste prestatie en scheefste schaats in 1 dag',
         slideGoalWinners: 'Top 3 per doel',
-        slideGoalWinnersSub: 'Bekijk per subgoal de top 3',
+        slideGoalWinnersSub: 'Per doel: top 3 (bij negatieve doelen: de 3 laagste scores)',
         slidePersonal: 'Mijn persoonlijke stats',
         slidePersonalSub: 'Per subdoel: jouw score, jouw ranking en het groepsgemiddelde',
         slideTeam: 'Team Stats',
         slideTeamSub: 'Overzicht van de challenge als geheel',
-        biggestTotal: 'Biggest Total Score',
-        mostNegativeSubgoal: 'Meest negatieve totaal op een subgoal',
+        strongestPerformance: 'Sterkste prestatie',
+        biggestDrop: 'Scheefste schaats',
         points: 'punten',
         noWinner: 'Nog geen duidelijke winnaar',
         completions: 'voltooiingen',
@@ -80,6 +89,7 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
         completionRate: 'completion rate',
         rank: 'plek',
         goal: 'doel',
+        day: 'dag',
         myScore: 'jouw score',
         avgScore: 'gemiddelde',
       };
@@ -98,16 +108,16 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
         introSub: 'Le challenge est terminé. Voici les temps forts.',
         slidePodium: 'Podium Top 3',
         slidePodiumSub: 'Les meilleurs finishers du challenge',
-        slideChampions: 'Gagnants & Perdants',
-        slideChampionsSub: 'Qui etait le plus fort, et qui l etait moins.',
+        slideChampions: 'Records journaliers',
+        slideChampionsSub: 'Plus forte hausse et plus forte baisse en 1 jour',
         slideGoalWinners: 'Top 3 par objectif',
-        slideGoalWinnersSub: 'Voir le top 3 pour chaque sous-objectif',
+        slideGoalWinnersSub: 'Par objectif: top 3 (pour objectifs negatifs: 3 scores les plus bas)',
         slidePersonal: 'Mes stats personnelles',
         slidePersonalSub: 'Par sous-objectif: ton score, ton rang et la moyenne du groupe',
         slideTeam: 'Stats équipe',
         slideTeamSub: 'Résumé global du challenge',
-        biggestTotal: 'Meilleur score total',
-        mostNegativeSubgoal: 'Total le plus negatif sur un sous-objectif',
+        strongestPerformance: 'Meilleure progression',
+        biggestDrop: 'Plus forte baisse',
         points: 'points',
         noWinner: 'Pas encore de vainqueur clair',
         completions: 'complétions',
@@ -117,6 +127,7 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
         completionRate: 'taux de completion',
         rank: 'rang',
         goal: 'objectif',
+        day: 'jour',
         myScore: 'ton score',
         avgScore: 'moyenne',
       };
@@ -134,16 +145,16 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
       introSub: 'The challenge is over. Time for the highlights.',
       slidePodium: 'Top 3 Podium',
       slidePodiumSub: 'The strongest finishers of the challenge',
-      slideChampions: 'Winners & Strugglers',
-      slideChampionsSub: 'Who was strongest, and who struggled most.',
+      slideChampions: 'Daily Records',
+      slideChampionsSub: 'Best jump and worst drop in a single day',
       slideGoalWinners: 'Top 3 by Goal',
-      slideGoalWinnersSub: 'Navigate each subgoal and see the top 3',
+      slideGoalWinnersSub: 'Per goal: top 3 (for negative goals: 3 lowest scores)',
       slidePersonal: 'My Personal Stats',
       slidePersonalSub: 'Per subgoal: your score, your rank, and group average',
       slideTeam: 'Team Stats',
       slideTeamSub: 'A full challenge summary',
-      biggestTotal: 'Biggest Total Score',
-      mostNegativeSubgoal: 'Most negative total on a subgoal',
+      strongestPerformance: 'Strongest Performance',
+      biggestDrop: 'Biggest Drop',
       points: 'points',
       noWinner: 'No clear winner yet',
       completions: 'completions',
@@ -153,6 +164,7 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
       completionRate: 'completion rate',
       rank: 'rank',
       goal: 'goal',
+      day: 'day',
       myScore: 'your score',
       avgScore: 'average',
     };
@@ -218,6 +230,7 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
       return {
         goalId: goal.id,
         goalTitle: goal.title,
+        goalPoints: goal.points,
         averageScore,
         ranking: fullRanking,
         topThree: fullRanking.slice(0, 3),
@@ -227,33 +240,58 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
     });
   }, [sortedGoals, leaderboard, scoreByGoalAndUser, currentUserId]);
 
-  const currentGoalRanking = goalRankings[goalSlideIndex] || null;
+  const goalSlideRankings = useMemo(() => {
+    return goalRankings.map(goal => ({
+      ...goal,
+      topThreeDisplay: goal.goalPoints < 0
+        ? [...goal.ranking].sort((a, b) => a.score - b.score).slice(0, 3)
+        : [...goal.ranking].sort((a, b) => b.score - a.score).slice(0, 3),
+    }));
+  }, [goalRankings]);
+
+  const currentGoalSlideRanking = goalSlideRankings[goalSlideIndex] || null;
 
   useEffect(() => {
-    if (goalRankings.length === 0) {
+    if (goalSlideRankings.length === 0) {
       setGoalSlideIndex(0);
       return;
     }
     setGoalSlideIndex(prev => {
-      if (prev < goalRankings.length) return prev;
+      if (prev < goalSlideRankings.length) return prev;
       return 0;
     });
-  }, [goalRankings.length]);
+  }, [goalSlideRankings.length]);
 
-  const mostNegativeSubgoal = useMemo(() => {
-    const candidates = goalRankings.flatMap(goal =>
-      goal.ranking.map(participant => ({
-        participant,
-        goalTitle: goal.goalTitle,
-        score: participant.score,
-      }))
-    );
+  const dailyRecords = useMemo(() => {
+    if (logs.length === 0) return { strongest: null as DailyRecord | null, weakest: null as DailyRecord | null };
 
-    if (candidates.length === 0) return null;
+    const participantMap = new Map(leaderboard.map(p => [p.userId, p]));
+    const dailyTotals = new Map<string, number>();
 
-    candidates.sort((a, b) => a.score - b.score);
-    return candidates[0];
-  }, [goalRankings]);
+    for (const log of logs) {
+      const dayKey = log.timestamp.slice(0, 10);
+      const key = `${log.userId}:${dayKey}`;
+      dailyTotals.set(key, (dailyTotals.get(key) || 0) + log.pointsEarned);
+    }
+
+    const records: DailyRecord[] = [];
+    for (const [key, amount] of dailyTotals.entries()) {
+      const [userId, day] = key.split(':');
+      const participant = participantMap.get(userId);
+      records.push({
+        userId,
+        day,
+        amount,
+        name: participant?.name || 'Anonymous',
+        avatar: participant?.avatar,
+      });
+    }
+
+    const strongest = [...records].sort((a, b) => b.amount - a.amount)[0] || null;
+    const weakest = [...records].sort((a, b) => a.amount - b.amount)[0] || null;
+
+    return { strongest, weakest };
+  }, [logs, leaderboard]);
 
   const teamStats = useMemo(() => {
     const totalCompletions = logs.length;
@@ -347,6 +385,14 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
     [challenge.id]
   );
 
+  const formatRecordDay = (day: string) => {
+    try {
+      return format(parseISO(day), 'd MMM');
+    } catch {
+      return day;
+    }
+  };
+
   if (isLoadingLogs) {
     return (
       <div className="animate-fadeIn bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-3xl p-8 text-center text-slate-500 dark:text-slate-400 font-medium">
@@ -415,6 +461,36 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">{slides[slideIndex].subtitle}</p>
         </div>
 
+        <div className="mb-4">
+          <div className="flex items-center justify-center gap-2 mb-3">
+            {slides.map((slide, idx) => (
+              <button
+                key={slide.id}
+                onClick={() => setSlideIndex(idx)}
+                className={`h-2.5 rounded-full transition-all ${idx === slideIndex ? 'w-7 bg-brand-500' : 'w-2.5 bg-slate-300 dark:bg-slate-600'}`}
+                aria-label={`${slide.title} ${idx + 1}`}
+              />
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <button
+              onClick={() => setSlideIndex(prev => Math.max(0, prev - 1))}
+              disabled={slideIndex === 0}
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-600 font-bold text-sm text-slate-700 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {copy.previous}
+            </button>
+
+            <button
+              onClick={() => setSlideIndex(prev => Math.min(slides.length - 1, prev + 1))}
+              className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm"
+            >
+              {slideIndex === slides.length - 1 ? copy.done : copy.next}
+            </button>
+          </div>
+        </div>
+
         <div className="flex-1">
           {slides[slideIndex].id === 'podium' && (
             <div className="space-y-6">
@@ -462,54 +538,77 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
           {slides[slideIndex].id === 'champions' && (
             <div className="space-y-4">
               <div className="rounded-2xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-800 shadow-sm">
-                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.biggestTotal}</p>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img src={topThree[0]?.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${topThree[0]?.name || 'winner'}`} alt={topThree[0]?.name || copy.noWinner} className="w-12 h-12 rounded-full" />
-                    <p className="text-lg font-black text-slate-900 dark:text-slate-100 truncate">{topThree[0]?.name || copy.noWinner}</p>
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.strongestPerformance}</p>
+                {dailyRecords.strongest ? (
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={dailyRecords.strongest.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${dailyRecords.strongest.name}`}
+                        alt={dailyRecords.strongest.name}
+                        className="w-12 h-12 rounded-full"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-lg font-black text-slate-900 dark:text-slate-100 truncate">{dailyRecords.strongest.name}</p>
+                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                          {copy.day}: {formatRecordDay(dailyRecords.strongest.day)}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-3xl font-black tracking-tight text-green-600">
+                      {dailyRecords.strongest.amount > 0 ? '+' : ''}{dailyRecords.strongest.amount}
+                    </p>
                   </div>
-                  <p className="text-3xl font-black tracking-tight text-brand-600">{topThree[0]?.score ?? 0}</p>
-                </div>
+                ) : (
+                  <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">{copy.noData}</p>
+                )}
               </div>
 
               <div className="rounded-2xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-800 shadow-sm">
-                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.mostNegativeSubgoal}</p>
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={mostNegativeSubgoal?.participant.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${mostNegativeSubgoal?.participant.name || 'negative'}`}
-                      alt={mostNegativeSubgoal?.participant.name || copy.noWinner}
-                      className="w-12 h-12 rounded-full"
-                    />
-                    <div className="min-w-0">
-                      <p className="text-lg font-black text-slate-900 dark:text-slate-100 truncate">{mostNegativeSubgoal?.participant.name || copy.noWinner}</p>
-                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 truncate">{copy.goal}: {mostNegativeSubgoal?.goalTitle || '-'}</p>
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.biggestDrop}</p>
+                {dailyRecords.weakest ? (
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={dailyRecords.weakest.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${dailyRecords.weakest.name}`}
+                        alt={dailyRecords.weakest.name}
+                        className="w-12 h-12 rounded-full"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-lg font-black text-slate-900 dark:text-slate-100 truncate">{dailyRecords.weakest.name}</p>
+                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                          {copy.day}: {formatRecordDay(dailyRecords.weakest.day)}
+                        </p>
+                      </div>
                     </div>
+                    <p className="text-3xl font-black tracking-tight text-rose-600">
+                      {dailyRecords.weakest.amount > 0 ? '+' : ''}{dailyRecords.weakest.amount}
+                    </p>
                   </div>
-                  <p className="text-2xl font-black tracking-tight text-rose-600">{mostNegativeSubgoal?.score ?? 0}</p>
-                </div>
+                ) : (
+                  <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">{copy.noData}</p>
+                )}
               </div>
             </div>
           )}
 
           {slides[slideIndex].id === 'goals' && (
             <div className="space-y-3">
-              {currentGoalRanking ? (
+              {currentGoalSlideRanking ? (
                 <div className="rounded-2xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-800 shadow-sm">
                   <div className="flex items-center justify-between gap-2 mb-4">
                     <button
-                      onClick={() => setGoalSlideIndex(prev => (prev === 0 ? goalRankings.length - 1 : prev - 1))}
+                      onClick={() => setGoalSlideIndex(prev => (prev === 0 ? goalSlideRankings.length - 1 : prev - 1))}
                       className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-300"
                       aria-label="Previous goal"
                     >
                       <ChevronLeft size={18} />
                     </button>
                     <div className="text-center min-w-0">
-                      <p className="text-sm font-black text-slate-900 dark:text-slate-100 truncate">{currentGoalRanking.goalTitle}</p>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-1">{goalSlideIndex + 1}/{goalRankings.length}</p>
+                      <p className="text-sm font-black text-slate-900 dark:text-slate-100 truncate">{currentGoalSlideRanking.goalTitle}</p>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-1">{goalSlideIndex + 1}/{goalSlideRankings.length}</p>
                     </div>
                     <button
-                      onClick={() => setGoalSlideIndex(prev => (prev + 1) % goalRankings.length)}
+                      onClick={() => setGoalSlideIndex(prev => (prev + 1) % goalSlideRankings.length)}
                       className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-300"
                       aria-label="Next goal"
                     >
@@ -518,14 +617,14 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
                   </div>
 
                   <div className="space-y-2">
-                    {currentGoalRanking.topThree.map((participant, index) => (
-                      <div key={`${currentGoalRanking.goalId}-${participant.userId}`} className="flex items-center justify-between rounded-xl border border-slate-100 dark:border-slate-700 p-3">
+                    {currentGoalSlideRanking.topThreeDisplay.map((participant, index) => (
+                      <div key={`${currentGoalSlideRanking.goalId}-${participant.userId}`} className="flex items-center justify-between rounded-xl border border-slate-100 dark:border-slate-700 p-3">
                         <div className="flex items-center gap-3 min-w-0">
                           <span className="w-7 h-7 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-black flex items-center justify-center">{index + 1}</span>
                           <img src={participant.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${participant.name}`} alt={participant.name} className="w-8 h-8 rounded-full" />
                           <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{participant.name}</p>
                         </div>
-                        <p className="text-lg font-black text-brand-600">{participant.score}</p>
+                        <p className={`text-lg font-black ${currentGoalSlideRanking.goalPoints < 0 ? 'text-rose-600' : 'text-brand-600'}`}>{participant.score}</p>
                       </div>
                     ))}
                   </div>
@@ -591,35 +690,6 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
           )}
         </div>
 
-        <div className="mt-6">
-          <div className="flex items-center justify-center gap-2 mb-4">
-            {slides.map((slide, idx) => (
-              <button
-                key={slide.id}
-                onClick={() => setSlideIndex(idx)}
-                className={`h-2.5 rounded-full transition-all ${idx === slideIndex ? 'w-7 bg-brand-500' : 'w-2.5 bg-slate-300 dark:bg-slate-600'}`}
-                aria-label={`${slide.title} ${idx + 1}`}
-              />
-            ))}
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <button
-              onClick={() => setSlideIndex(prev => Math.max(0, prev - 1))}
-              disabled={slideIndex === 0}
-              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-600 font-bold text-sm text-slate-700 dark:text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {copy.previous}
-            </button>
-
-            <button
-              onClick={() => setSlideIndex(prev => Math.min(slides.length - 1, prev + 1))}
-              className="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm"
-            >
-              {slideIndex === slides.length - 1 ? copy.done : copy.next}
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
