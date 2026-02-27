@@ -477,6 +477,13 @@ const ChallengeDetail: React.FC = () => {
   if (loadingInitial) return <LoadingScreen />;
   if (!challenge) return <div className="p-8 text-center text-red-500 dark:text-red-400">Challenge not found.</div>;
 
+  const sortedGoals = [...challenge.goals].sort((a, b) => {
+    const groupA = a.points < 0 ? 1 : 0;
+    const groupB = b.points < 0 ? 1 : 0;
+    if (groupA !== groupB) return groupA - groupB;
+    return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+  });
+
   const isOwner = user?.id === challenge.creatorId;
   const wrappedTabLabel = language === 'nl' ? 'Wrapped' : language === 'fr' ? 'Wrapped' : 'Wrapped';
   const previewWrappedLabel = language === 'nl' ? 'Preview Wrapped' : language === 'fr' ? 'Apercu Wrapped' : 'Preview Wrapped';
@@ -631,7 +638,7 @@ const ChallengeDetail: React.FC = () => {
               </button>
             </div>
 
-            {challenge.goals.length > 0 && !statsCache[id!] && (
+            {sortedGoals.length > 0 && !statsCache[id!] && (
               <div className="space-y-3 animate-pulse">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm">
@@ -653,7 +660,7 @@ const ChallengeDetail: React.FC = () => {
               </div>
             )}
 
-            {challenge.goals.map(goal => {
+            {sortedGoals.map(goal => {
               const GoalIcon = getIcon(goal.icon);
               const completionsInPeriod = userPeriodCounts.countByGoalId[goal.id] || 0;
               const isCompleted = goal.maxCompletions ? completionsInPeriod >= goal.maxCompletions : false;
@@ -738,6 +745,7 @@ const ChallengeDetail: React.FC = () => {
             isLoadingLogs={isWrappedLogsLoading || !wrappedLogs}
             language={language}
             showConfetti={showWrappedConfetti}
+            currentUserId={user?.id}
           />
         )}
         {activeTab === 'leaderboard' && (
@@ -745,7 +753,7 @@ const ChallengeDetail: React.FC = () => {
             <div className="relative">
               <select value={selectedLeaderboardGoalId} onChange={(e) => setSelectedLeaderboardGoalId(e.target.value)} className="w-full pl-4 pr-10 py-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-2xl text-base font-black text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-brand-500/20 appearance-none shadow-sm transition-all">
                 <option value="total">{language === 'nl' ? 'Totaal Klassement' : 'Overall Standing'}</option>
-                {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+                {sortedGoals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
               </select>
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" size={20} />
             </div>
@@ -776,7 +784,7 @@ const ChallengeDetail: React.FC = () => {
                 <div className="relative min-w-[200px]">
                   <select value={selectedProgressGoalId} onChange={(e) => setSelectedProgressGoalId(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-300 outline-none shadow-sm appearance-none">
                     <option value="total">Alle Doelen</option>
-                    {challenge.goals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
+                    {sortedGoals.map(g => <option key={g.id} value={g.id}>{g.title}</option>)}
                   </select>
                   <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500 pointer-events-none" size={16} />
                 </div>

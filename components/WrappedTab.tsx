@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { addDays, eachDayOfInterval, format, isAfter, isBefore, parseISO, startOfDay, subDays } from 'date-fns';
+import { addDays, eachDayOfInterval, format, isAfter, parseISO, startOfDay, subDays } from 'date-fns';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Challenge, ChallengeStats, CompletionLog } from '../types';
 
 interface WrappedTabProps {
@@ -9,6 +10,7 @@ interface WrappedTabProps {
   isLoadingLogs: boolean;
   language: 'nl' | 'en' | 'fr';
   showConfetti: boolean;
+  currentUserId?: string;
 }
 
 type WrappedParticipant = {
@@ -18,11 +20,31 @@ type WrappedParticipant = {
   score: number;
 };
 
-const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadingLogs, language, showConfetti }) => {
+type GoalRanking = {
+  goalId: string;
+  goalTitle: string;
+  averageScore: number;
+  ranking: WrappedParticipant[];
+  topThree: WrappedParticipant[];
+  myScore: number;
+  myRank: number;
+};
+
+const WrappedTab: React.FC<WrappedTabProps> = ({
+  challenge,
+  stats,
+  logs,
+  isLoadingLogs,
+  language,
+  showConfetti,
+  currentUserId,
+}) => {
   const [slideIndex, setSlideIndex] = useState(0);
+  const [goalSlideIndex, setGoalSlideIndex] = useState(0);
 
   useEffect(() => {
     setSlideIndex(0);
+    setGoalSlideIndex(0);
   }, [challenge.id]);
 
   const copy = useMemo(() => {
@@ -39,26 +61,27 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
         introSub: 'De challenge is voorbij. Tijd voor de highlights.',
         slidePodium: 'Top 3 Podium',
         slidePodiumSub: 'De sterkste finishers van de challenge',
-        slideChampions: 'Champions',
-        slideChampionsSub: 'Wie was het sterkst en meest consistent?',
-        slideGoalWinners: 'Goal Winners',
-        slideGoalWinnersSub: 'Per doel de beste score',
-        slideImprovement: 'Most Improved',
-        slideImprovementSub: 'Grootste groei van begin naar einde',
+        slideChampions: 'Winnaars & Verliezers',
+        slideChampionsSub: 'Wie was het sterkst, wie was er minder sterk.',
+        slideGoalWinners: 'Top 3 per doel',
+        slideGoalWinnersSub: 'Bekijk per subgoal de top 3',
+        slidePersonal: 'Mijn persoonlijke stats',
+        slidePersonalSub: 'Per subdoel: jouw score, jouw ranking en het groepsgemiddelde',
         slideTeam: 'Team Stats',
         slideTeamSub: 'Overzicht van de challenge als geheel',
         biggestTotal: 'Biggest Total Score',
-        mostConsistent: 'Most Consistent',
-        activeDays: 'actieve dagen',
+        mostNegativeSubgoal: 'Meest negatieve totaal op een subgoal',
         points: 'punten',
         noWinner: 'Nog geen duidelijke winnaar',
-        improvementDelta: 'verbetering',
         completions: 'voltooiingen',
         totalPoints: 'totaal punten',
         avgPerParticipant: 'gem. per deelnemer',
         activeParticipants: 'actieve deelnemers',
         completionRate: 'completion rate',
         rank: 'plek',
+        goal: 'doel',
+        myScore: 'jouw score',
+        avgScore: 'gemiddelde',
       };
     }
 
@@ -75,26 +98,27 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
         introSub: 'Le challenge est terminé. Voici les temps forts.',
         slidePodium: 'Podium Top 3',
         slidePodiumSub: 'Les meilleurs finishers du challenge',
-        slideChampions: 'Champions',
-        slideChampionsSub: 'Qui a dominé et qui a été le plus régulier ?',
-        slideGoalWinners: 'Vainqueurs par objectif',
-        slideGoalWinnersSub: 'Meilleur score pour chaque objectif',
-        slideImprovement: 'Most Improved',
-        slideImprovementSub: 'Plus forte progression entre début et fin',
+        slideChampions: 'Gagnants & Perdants',
+        slideChampionsSub: 'Qui etait le plus fort, et qui l etait moins.',
+        slideGoalWinners: 'Top 3 par objectif',
+        slideGoalWinnersSub: 'Voir le top 3 pour chaque sous-objectif',
+        slidePersonal: 'Mes stats personnelles',
+        slidePersonalSub: 'Par sous-objectif: ton score, ton rang et la moyenne du groupe',
         slideTeam: 'Stats équipe',
         slideTeamSub: 'Résumé global du challenge',
         biggestTotal: 'Meilleur score total',
-        mostConsistent: 'Le plus régulier',
-        activeDays: 'jours actifs',
+        mostNegativeSubgoal: 'Total le plus negatif sur un sous-objectif',
         points: 'points',
         noWinner: 'Pas encore de vainqueur clair',
-        improvementDelta: 'progression',
         completions: 'complétions',
         totalPoints: 'points totaux',
         avgPerParticipant: 'moy. par participant',
         activeParticipants: 'participants actifs',
         completionRate: 'taux de completion',
         rank: 'rang',
+        goal: 'objectif',
+        myScore: 'ton score',
+        avgScore: 'moyenne',
       };
     }
 
@@ -110,26 +134,27 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
       introSub: 'The challenge is over. Time for the highlights.',
       slidePodium: 'Top 3 Podium',
       slidePodiumSub: 'The strongest finishers of the challenge',
-      slideChampions: 'Champions',
-      slideChampionsSub: 'Who dominated and who stayed most consistent?',
-      slideGoalWinners: 'Goal Winners',
-      slideGoalWinnersSub: 'Best score per goal',
-      slideImprovement: 'Most Improved',
-      slideImprovementSub: 'Biggest growth from start to finish',
+      slideChampions: 'Winners & Strugglers',
+      slideChampionsSub: 'Who was strongest, and who struggled most.',
+      slideGoalWinners: 'Top 3 by Goal',
+      slideGoalWinnersSub: 'Navigate each subgoal and see the top 3',
+      slidePersonal: 'My Personal Stats',
+      slidePersonalSub: 'Per subgoal: your score, your rank, and group average',
       slideTeam: 'Team Stats',
       slideTeamSub: 'A full challenge summary',
       biggestTotal: 'Biggest Total Score',
-      mostConsistent: 'Most Consistent',
-      activeDays: 'active days',
+      mostNegativeSubgoal: 'Most negative total on a subgoal',
       points: 'points',
       noWinner: 'No clear winner yet',
-      improvementDelta: 'improvement',
       completions: 'completions',
       totalPoints: 'total points',
       avgPerParticipant: 'avg per participant',
       activeParticipants: 'active participants',
       completionRate: 'completion rate',
       rank: 'rank',
+      goal: 'goal',
+      myScore: 'your score',
+      avgScore: 'average',
     };
   }, [language]);
 
@@ -157,116 +182,78 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
 
   const topThree = leaderboard.slice(0, 3);
 
-  const consistencyWinner = useMemo(() => {
-    const activeDayMap = new Map<string, Set<string>>();
-
-    logs.forEach(log => {
-      const dayKey = log.timestamp.slice(0, 10);
-      const existing = activeDayMap.get(log.userId) || new Set<string>();
-      existing.add(dayKey);
-      activeDayMap.set(log.userId, existing);
+  const sortedGoals = useMemo(() => {
+    return [...challenge.goals].sort((a, b) => {
+      const groupA = a.points < 0 ? 1 : 0;
+      const groupB = b.points < 0 ? 1 : 0;
+      if (groupA !== groupB) return groupA - groupB;
+      return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
     });
+  }, [challenge.goals]);
 
-    const ranked = leaderboard.map(p => ({
-      ...p,
-      activeDays: activeDayMap.get(p.userId)?.size || 0,
-    }));
+  const scoreByGoalAndUser = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of stats.goalScores) {
+      map.set(`${row.goal_id}:${row.user_id}`, row.score);
+    }
+    return map;
+  }, [stats.goalScores]);
 
-    ranked.sort((a, b) => {
-      if (b.activeDays !== a.activeDays) return b.activeDays - a.activeDays;
-      return b.score - a.score;
-    });
+  const goalRankings = useMemo<GoalRanking[]>(() => {
+    return sortedGoals.map(goal => {
+      const fullRanking = leaderboard.map(participant => ({
+        ...participant,
+        score: scoreByGoalAndUser.get(`${goal.id}:${participant.userId}`) || 0,
+      }));
 
-    return ranked[0];
-  }, [leaderboard, logs]);
+      fullRanking.sort((a, b) => b.score - a.score);
 
-  const goalWinners = useMemo(() => {
-    const participantMap = new Map(leaderboard.map(p => [p.userId, p]));
+      const averageRaw = fullRanking.reduce((sum, p) => sum + p.score, 0) / Math.max(1, fullRanking.length);
+      const averageScore = Math.round(averageRaw * 10) / 10;
 
-    return challenge.goals.map(goal => {
-      const scoresForGoal = stats.goalScores
-        .filter(gs => gs.goal_id === goal.id)
-        .sort((a, b) => b.score - a.score);
-
-      const topScore = scoresForGoal[0]?.score;
-      if (topScore === undefined) {
-        return {
-          goalId: goal.id,
-          goalTitle: goal.title,
-          topScore: 0,
-          winners: [] as WrappedParticipant[],
-        };
-      }
-
-      const winners = scoresForGoal
-        .filter(s => s.score === topScore)
-        .map(s => {
-          const participant = participantMap.get(s.user_id);
-          return {
-            userId: s.user_id,
-            name: participant?.name || 'Anonymous',
-            avatar: participant?.avatar,
-            score: s.score,
-          };
-        });
+      const myEntry = currentUserId ? fullRanking.find(p => p.userId === currentUserId) : undefined;
+      const myScore = myEntry?.score || 0;
+      const myRank = myEntry ? fullRanking.findIndex(p => p.score === myScore) + 1 : 0;
 
       return {
         goalId: goal.id,
         goalTitle: goal.title,
-        topScore,
-        winners,
+        averageScore,
+        ranking: fullRanking,
+        topThree: fullRanking.slice(0, 3),
+        myScore,
+        myRank,
       };
     });
-  }, [challenge.goals, leaderboard, stats.goalScores]);
+  }, [sortedGoals, leaderboard, scoreByGoalAndUser, currentUserId]);
 
-  const mostImproved = useMemo(() => {
-    if (logs.length === 0) return null;
+  const currentGoalRanking = goalRankings[goalSlideIndex] || null;
 
-    const start = startOfDay(parseISO(challenge.startDate));
-    const end = startOfDay(parseISO(challenge.endDate));
-
-    if (isAfter(start, end)) return null;
-
-    const challengeDays = eachDayOfInterval({ start, end });
-    const windowSize = Math.min(7, challengeDays.length);
-
-    const firstWindowEnd = addDays(start, windowSize - 1);
-    const lastWindowStart = subDays(end, windowSize - 1);
-
-    const firstWindowPoints = new Map<string, number>();
-    const lastWindowPoints = new Map<string, number>();
-
-    logs.forEach(log => {
-      const day = startOfDay(parseISO(log.timestamp));
-      const uid = log.userId;
-
-      if (!isBefore(day, start) && !isAfter(day, firstWindowEnd)) {
-        firstWindowPoints.set(uid, (firstWindowPoints.get(uid) || 0) + log.pointsEarned);
-      }
-
-      if (!isBefore(day, lastWindowStart) && !isAfter(day, end)) {
-        lastWindowPoints.set(uid, (lastWindowPoints.get(uid) || 0) + log.pointsEarned);
-      }
+  useEffect(() => {
+    if (goalRankings.length === 0) {
+      setGoalSlideIndex(0);
+      return;
+    }
+    setGoalSlideIndex(prev => {
+      if (prev < goalRankings.length) return prev;
+      return 0;
     });
+  }, [goalRankings.length]);
 
-    const ranked = leaderboard.map(p => {
-      const startPoints = firstWindowPoints.get(p.userId) || 0;
-      const endPoints = lastWindowPoints.get(p.userId) || 0;
-      return {
-        ...p,
-        startPoints,
-        endPoints,
-        delta: endPoints - startPoints,
-      };
-    });
+  const mostNegativeSubgoal = useMemo(() => {
+    const candidates = goalRankings.flatMap(goal =>
+      goal.ranking.map(participant => ({
+        participant,
+        goalTitle: goal.goalTitle,
+        score: participant.score,
+      }))
+    );
 
-    ranked.sort((a, b) => {
-      if (b.delta !== a.delta) return b.delta - a.delta;
-      return b.endPoints - a.endPoints;
-    });
+    if (candidates.length === 0) return null;
 
-    return ranked[0] || null;
-  }, [challenge.endDate, challenge.startDate, leaderboard, logs]);
+    candidates.sort((a, b) => a.score - b.score);
+    return candidates[0];
+  }, [goalRankings]);
 
   const teamStats = useMemo(() => {
     const totalCompletions = logs.length;
@@ -297,7 +284,7 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
       return 0;
     };
 
-    const maxCompletionsPerParticipant = challenge.goals.reduce((sum, goal) => {
+    const maxCompletionsPerParticipant = sortedGoals.reduce((sum, goal) => {
       const periods = getPeriodCount(goal.frequency);
       const maxCompletions = goal.maxCompletions || 1;
       return sum + periods * maxCompletions;
@@ -314,7 +301,7 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
       activeParticipantsRate,
       completionRate,
     };
-  }, [challenge.endDate, challenge.goals, challenge.participants.length, challenge.startDate, logs]);
+  }, [challenge.endDate, sortedGoals, challenge.participants.length, challenge.startDate, logs]);
 
   const slides = useMemo(() => {
     return [
@@ -334,9 +321,9 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
         subtitle: copy.slideGoalWinnersSub,
       },
       {
-        id: 'improvement',
-        title: copy.slideImprovement,
-        subtitle: copy.slideImprovementSub,
+        id: 'personal',
+        title: copy.slidePersonal,
+        subtitle: copy.slidePersonalSub,
       },
       {
         id: 'team',
@@ -469,16 +456,6 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
                   );
                 })}
               </div>
-              <div className="rounded-2xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-4 flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.biggestTotal}</p>
-                  <p className="text-xl font-black text-slate-900 dark:text-slate-100 leading-tight mt-1">{topThree[0]?.name || copy.noWinner}</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-3xl font-black tracking-tight text-brand-600">{topThree[0]?.score ?? 0}</p>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.points}</p>
-                </div>
-              </div>
             </div>
           )}
 
@@ -496,20 +473,20 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
               </div>
 
               <div className="rounded-2xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-800 shadow-sm">
-                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.mostConsistent}</p>
+                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.mostNegativeSubgoal}</p>
                 <div className="mt-2 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <img
-                      src={consistencyWinner?.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${consistencyWinner?.name || 'consistency'}`}
-                      alt={consistencyWinner?.name || copy.noWinner}
+                      src={mostNegativeSubgoal?.participant.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${mostNegativeSubgoal?.participant.name || 'negative'}`}
+                      alt={mostNegativeSubgoal?.participant.name || copy.noWinner}
                       className="w-12 h-12 rounded-full"
                     />
                     <div className="min-w-0">
-                      <p className="text-lg font-black text-slate-900 dark:text-slate-100 truncate">{consistencyWinner?.name || copy.noWinner}</p>
-                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{consistencyWinner?.activeDays || 0} {copy.activeDays}</p>
+                      <p className="text-lg font-black text-slate-900 dark:text-slate-100 truncate">{mostNegativeSubgoal?.participant.name || copy.noWinner}</p>
+                      <p className="text-xs font-bold text-slate-500 dark:text-slate-400 truncate">{copy.goal}: {mostNegativeSubgoal?.goalTitle || '-'}</p>
                     </div>
                   </div>
-                  <p className="text-2xl font-black tracking-tight text-slate-800 dark:text-slate-100">#{leaderboard.findIndex(p => p.userId === consistencyWinner?.userId) + 1}</p>
+                  <p className="text-2xl font-black tracking-tight text-rose-600">{mostNegativeSubgoal?.score ?? 0}</p>
                 </div>
               </div>
             </div>
@@ -517,62 +494,73 @@ const WrappedTab: React.FC<WrappedTabProps> = ({ challenge, stats, logs, isLoadi
 
           {slides[slideIndex].id === 'goals' && (
             <div className="space-y-3">
-              {goalWinners.map(goal => (
-                <div key={goal.goalId} className="rounded-2xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-800 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-black text-slate-900 dark:text-slate-100 truncate">{goal.goalTitle}</p>
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-1">{copy.points}: {goal.topScore}</p>
+              {currentGoalRanking ? (
+                <div className="rounded-2xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-800 shadow-sm">
+                  <div className="flex items-center justify-between gap-2 mb-4">
+                    <button
+                      onClick={() => setGoalSlideIndex(prev => (prev === 0 ? goalRankings.length - 1 : prev - 1))}
+                      className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-300"
+                      aria-label="Previous goal"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <div className="text-center min-w-0">
+                      <p className="text-sm font-black text-slate-900 dark:text-slate-100 truncate">{currentGoalRanking.goalTitle}</p>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mt-1">{goalSlideIndex + 1}/{goalRankings.length}</p>
                     </div>
-                    <div className="text-right min-w-[120px]">
-                      {goal.winners.length > 0 ? (
-                        <p className="text-sm font-bold text-brand-600 dark:text-brand-400 truncate">
-                          {goal.winners.map(w => w.name).join(', ')}
-                        </p>
-                      ) : (
-                        <p className="text-sm font-medium text-slate-400 dark:text-slate-500">{copy.noWinner}</p>
-                      )}
-                    </div>
+                    <button
+                      onClick={() => setGoalSlideIndex(prev => (prev + 1) % goalRankings.length)}
+                      className="w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-600 flex items-center justify-center text-slate-600 dark:text-slate-300"
+                      aria-label="Next goal"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {currentGoalRanking.topThree.map((participant, index) => (
+                      <div key={`${currentGoalRanking.goalId}-${participant.userId}`} className="flex items-center justify-between rounded-xl border border-slate-100 dark:border-slate-700 p-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="w-7 h-7 rounded-lg bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs font-black flex items-center justify-center">{index + 1}</span>
+                          <img src={participant.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${participant.name}`} alt={participant.name} className="w-8 h-8 rounded-full" />
+                          <p className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{participant.name}</p>
+                        </div>
+                        <p className="text-lg font-black text-brand-600">{participant.score}</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              ) : (
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{copy.noData}</p>
+              )}
             </div>
           )}
 
-          {slides[slideIndex].id === 'improvement' && (
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-slate-100 dark:border-slate-700 p-5 bg-white dark:bg-slate-800 shadow-sm">
-                <p className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.slideImprovement}</p>
-                {mostImproved ? (
-                  <div className="mt-3 space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <img src={mostImproved.avatar || `https://api.dicebear.com/9.x/initials/svg?seed=${mostImproved.name}`} alt={mostImproved.name} className="w-12 h-12 rounded-full" />
-                        <div className="min-w-0">
-                          <p className="text-xl font-black text-slate-900 dark:text-slate-100 truncate">{mostImproved.name}</p>
-                          <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{copy.rank}: #{leaderboard.findIndex(p => p.userId === mostImproved.userId) + 1}</p>
-                        </div>
+          {slides[slideIndex].id === 'personal' && (
+            <div className="space-y-3">
+              {currentUserId ? (
+                goalRankings.map(goal => (
+                  <div key={goal.goalId} className="rounded-2xl border border-slate-100 dark:border-slate-700 p-4 bg-white dark:bg-slate-800 shadow-sm">
+                    <p className="text-sm font-black text-slate-900 dark:text-slate-100 truncate">{goal.goalTitle}</p>
+                    <div className="grid grid-cols-3 gap-2 mt-3">
+                      <div className="rounded-xl bg-brand-50 dark:bg-brand-900/30 border border-brand-100 dark:border-brand-800 p-2.5 text-center">
+                        <p className="text-[10px] uppercase tracking-wider font-black text-brand-700 dark:text-brand-300">{copy.myScore}</p>
+                        <p className="text-lg font-black text-brand-700 dark:text-brand-300 mt-1">{goal.myScore}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-3xl font-black text-green-600">{mostImproved.delta >= 0 ? '+' : ''}{mostImproved.delta}</p>
-                        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{copy.improvementDelta}</p>
+                      <div className="rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700 p-2.5 text-center">
+                        <p className="text-[10px] uppercase tracking-wider font-black text-slate-500 dark:text-slate-400">{copy.rank}</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-slate-100 mt-1">{goal.myRank ? `#${goal.myRank}` : '-'}</p>
                       </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 text-sm font-bold">
-                      <div className="rounded-xl bg-slate-50 dark:bg-slate-900/40 p-3 border border-slate-100 dark:border-slate-700">
-                        <p className="text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider">Start window</p>
-                        <p className="text-slate-900 dark:text-slate-100 text-xl">{mostImproved.startPoints}</p>
-                      </div>
-                      <div className="rounded-xl bg-green-50 dark:bg-green-900/20 p-3 border border-green-100 dark:border-green-800">
-                        <p className="text-green-700 dark:text-green-300 text-[11px] uppercase tracking-wider">End window</p>
-                        <p className="text-green-700 dark:text-green-300 text-xl">{mostImproved.endPoints}</p>
+                      <div className="rounded-xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-700 p-2.5 text-center">
+                        <p className="text-[10px] uppercase tracking-wider font-black text-slate-500 dark:text-slate-400">{copy.avgScore}</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-slate-100 mt-1">{goal.averageScore}</p>
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">{copy.noData}</p>
-                )}
-              </div>
+                ))
+              ) : (
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">{copy.noData}</p>
+              )}
             </div>
           )}
 
