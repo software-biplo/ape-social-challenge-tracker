@@ -426,8 +426,8 @@ const WrappedTab: React.FC<WrappedTabProps> = ({
       {showConfetti && (
         <div className="fixed inset-0 z-50 pointer-events-none overflow-hidden">
           <div className="absolute inset-0 bg-slate-950/30 backdrop-blur-[1px]" />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="bg-white/95 dark:bg-slate-900/95 border border-white/80 dark:border-slate-700 rounded-2xl px-5 py-4 shadow-xl">
+          <div className="absolute inset-0 grid place-items-center p-4">
+            <div className="w-full max-w-sm bg-white/95 dark:bg-slate-900/95 border border-white/80 dark:border-slate-700 rounded-2xl px-5 py-4 shadow-xl text-center">
               <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight text-center">{copy.introTitle}</h3>
               <p className="text-xs sm:text-sm font-semibold text-slate-600 dark:text-slate-300 text-center mt-1">{copy.introSub}</p>
             </div>

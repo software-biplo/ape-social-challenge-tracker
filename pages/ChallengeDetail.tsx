@@ -34,11 +34,9 @@ const ChallengeDetail: React.FC = () => {
   const [loadingInitial, setLoadingInitial] = useState(!challenge);
   const [processingGoalId, setProcessingGoalId] = useState<string | null>(null);
   const pendingCompletionsRef = useRef<Record<string, number>>({});
-  const [wrappedPreviewEnabled, setWrappedPreviewEnabled] = useState(false);
   const [wrappedLogs, setWrappedLogs] = useState<CompletionLog[] | null>(null);
   const [isWrappedLogsLoading, setIsWrappedLogsLoading] = useState(false);
   const [showWrappedConfetti, setShowWrappedConfetti] = useState(false);
-  const previewConfettiShownRef = useRef(false);
 
   // Date navigation: allows viewing/logging goals for past days
   const [selectedDate, setSelectedDate] = useState<Date>(startOfDay(new Date()));
@@ -75,11 +73,9 @@ const ChallengeDetail: React.FC = () => {
   }, [id, fetchChallengeDetail, fetchStats]);
 
   useEffect(() => {
-    setWrappedPreviewEnabled(false);
     setWrappedLogs(null);
     setIsWrappedLogsLoading(false);
     setShowWrappedConfetti(false);
-    previewConfettiShownRef.current = false;
   }, [id]);
 
   // Real-time Chat Subscription
@@ -164,11 +160,12 @@ const ChallengeDetail: React.FC = () => {
       return isAfter(startOfDay(new Date()), end);
   }, [challenge]);
 
-  const wrappedEnabled = challengeEnded || wrappedPreviewEnabled;
+  const wrappedEnabled = challengeEnded;
 
   useEffect(() => {
-    if (wrappedEnabled && activeTab === 'goals') setActiveTab('wrapped');
-    if (!wrappedEnabled && activeTab === 'wrapped') setActiveTab('goals');
+    if (!wrappedEnabled && activeTab === 'wrapped') {
+      setActiveTab('goals');
+    }
   }, [wrappedEnabled, activeTab]);
 
   useEffect(() => {
@@ -197,19 +194,9 @@ const ChallengeDetail: React.FC = () => {
   useEffect(() => {
     if (!challenge || activeTab !== 'wrapped' || !wrappedEnabled) return;
 
-    let shouldShow = false;
-    if (challengeEnded) {
-      const seenKey = `ape_wrapped_seen_${challenge.id}`;
-      if (!localStorage.getItem(seenKey)) {
-        shouldShow = true;
-        localStorage.setItem(seenKey, '1');
-      }
-    } else if (!previewConfettiShownRef.current) {
-      shouldShow = true;
-      previewConfettiShownRef.current = true;
-    }
-
-    if (!shouldShow) return;
+    const seenKey = `ape_wrapped_seen_${challenge.id}`;
+    if (localStorage.getItem(seenKey)) return;
+    localStorage.setItem(seenKey, '1');
     setShowWrappedConfetti(true);
 
     const timer = window.setTimeout(() => {
@@ -217,7 +204,7 @@ const ChallengeDetail: React.FC = () => {
     }, 2200);
 
     return () => window.clearTimeout(timer);
-  }, [activeTab, challenge, wrappedEnabled, challengeEnded]);
+  }, [activeTab, challenge, wrappedEnabled]);
 
   const handleLogGoal = async (goal: Goal) => {
     if (!user || !id || processingGoalId) return;
@@ -486,16 +473,10 @@ const ChallengeDetail: React.FC = () => {
 
   const isOwner = user?.id === challenge.creatorId;
   const wrappedTabLabel = language === 'nl' ? 'Wrapped' : language === 'fr' ? 'Wrapped' : 'Wrapped';
-  const previewWrappedLabel = language === 'nl' ? 'Preview Wrapped' : language === 'fr' ? 'Apercu Wrapped' : 'Preview Wrapped';
-  const stopPreviewLabel = language === 'nl' ? 'Stop Preview' : language === 'fr' ? 'Stop Apercu' : 'Stop Preview';
-  const wrappedUnlockInfo = language === 'nl'
-    ? 'Wrapped wordt automatisch beschikbaar zodra de challenge eindigt.'
-    : language === 'fr'
-      ? 'Wrapped sera disponible automatiquement a la fin du challenge.'
-      : 'Wrapped unlocks automatically as soon as the challenge ends.';
 
   const tabs = [
-    { id: wrappedEnabled ? 'wrapped' : 'goals', label: wrappedEnabled ? wrappedTabLabel : t('my_goals') },
+    ...(wrappedEnabled ? [{ id: 'wrapped', label: wrappedTabLabel }] : []),
+    { id: 'goals', label: t('my_goals') },
     { id: 'leaderboard', label: t('leaderboard') },
     { id: 'progress', label: t('progress') },
     { id: 'chat', label: t('chat') },
@@ -539,24 +520,6 @@ const ChallengeDetail: React.FC = () => {
                 <Lock size={14} /> {t('starts_on')} {format(parseISO(challenge.startDate), 'd MMMM', { locale: dateLocale })}
              </div>
           )}
-          {!challengeEnded && (
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <button
-                onClick={() => {
-                  setWrappedPreviewEnabled(prev => !prev);
-                  if (!wrappedEnabled) setActiveTab('wrapped');
-                }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider border transition-colors ${
-                  wrappedPreviewEnabled
-                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100'
-                    : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600'
-                }`}
-              >
-                {wrappedPreviewEnabled ? stopPreviewLabel : previewWrappedLabel}
-              </button>
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{wrappedUnlockInfo}</span>
-            </div>
-          )}
       </div>
 
       <div className="px-4 md:px-0 sticky top-0 z-30">
@@ -590,13 +553,15 @@ const ChallengeDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Adjusted Tab Bar: Font size reduced to text-[10px] for mobile to ensure fitting 4 columns */}
-      <div className="grid grid-cols-4 border-b border-slate-200 dark:border-slate-600 px-4 md:px-0">
+      <div
+        className="grid border-b border-slate-200 dark:border-slate-600 px-4 md:px-0"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+      >
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`py-3 px-0 text-[10px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
+            className={`py-3 px-0 text-[9px] sm:text-sm font-bold transition-all relative text-center min-w-0 truncate ${activeTab === tab.id ? 'text-brand-600' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
           >
             {tab.label}
             {activeTab === tab.id && <div className="absolute bottom-0 left-0 right-0 h-1 bg-brand-500 rounded-t-full" />}
